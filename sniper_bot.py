@@ -260,7 +260,7 @@ async def sniper_standalone_worker(app):
                                 f"💣 **{sniper_choice} ထိုးရန် ❗**\n"
                                 f"📊 **Setup:**\n"
                                 f"{setup_status}\n"
-                                f"**Signal Power - [Head Shot]**\n"
+                                f"**Siginal Power - [Head Shot]**\n"
                                 f"━━━━━━━━━━━━━━━━━━"
                             )
                             try:
@@ -271,7 +271,7 @@ async def sniper_standalone_worker(app):
                             short_wait = (
                                 f"⏳ **#{period_tail}:** {num_val} [{side_val}] (Block: `{curr_num}`)\n"
                                 f"🎯 **#{next_tail}:** စောင့်ကြည့်ဆဲ (W:{sniper_tracker['today_wins']} | L:{sniper_tracker['today_losses']})\n"
-                                f"🔫 ပစ်မှတ်ကောင်းကို ရှာဖွေနေသည်။"
+                                f"🔫 ပစ်မှတ်ကို ရှာဖွေနေသည်။"
                             )
                             try:
                                 await app.bot.send_message(chat_id=SNIPER_CHANNEL_ID, text=short_wait, parse_mode="Markdown")
