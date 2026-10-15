@@ -13,6 +13,7 @@ MY_ADMIN_ID = 6519855560
 SNIPER_CHANNEL_ID = -1004325746548
 STATS_FILE = "sniper_stats.json"
 
+# --- Persistent Stats Tracker ---
 def load_stats():
     default_stats = {
         "current_date": "",
@@ -43,11 +44,12 @@ system_state = {
     "last_reported_block": 0,
     "last_reported_period": 0,
     "history_bs": [],
-    "target_modulo": 10,               # Screenshot အရ 6Lottery လက်ရှိ Modulo 10 အစစ်
+    "active_modulo": 10,              # Auto-updating dynamic modulo
     "sniper_pending": None,
     "sniper_win_streak": 0
 }
 
+# --- Minimal Keep-Alive Server ---
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -75,7 +77,7 @@ def self_ping_worker():
         threading.Event().wait(300)
 
 def fetch_tron_blocks():
-    url = "https://apilist.tronscanapi.com/api/block?sort=-number&limit=20"
+    url = "https://apilist.tronscanapi.com/api/block?sort=-number&limit=25"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json"
@@ -88,17 +90,35 @@ def fetch_tron_blocks():
     except Exception:
         return []
 
-def get_settled_6lottery_block(blocks):
+# --- 100% Zero-Drift Timestamp & Dynamic Modulo Engine ---
+def get_exact_settled_6lottery_block(blocks):
+    """
+    ၆ထီ အသုံးပြုသော :54 စက္ကန့် Block ကို Timestamp ဖြင့် တိုက်ရိုက်ရှာဖွေပြီး Modulo အလိုအလျောက် ထိန်းညှိခြင်း
+    """
     if not blocks:
         return 0, ""
 
-    # Modulo 10 (Screenshot အတိုင်း 87119610, 87119630, 87119750...)
+    tz_mm = timezone(timedelta(hours=6, minutes=30))
+
+    # ၁။ ပြီးဆုံးသွားသော မိနစ်၏ :53 မှ :56 စက္ကန့်အတွင်း Tron ကွန်ရက်ပေါ် တကယ်ထွက်ခဲ့သော Block ကို အရင်ရှာဖွေခြင်း
+    for b in blocks:
+        ts_ms = b.get("timestamp", 0)
+        if ts_ms > 0:
+            dt = datetime.fromtimestamp(ts_ms / 1000, tz=tz_mm)
+            if 53 <= dt.second <= 56:
+                num = b.get("number", 0)
+                if num > 0:
+                    system_state["active_modulo"] = num % 20  # Modulo အသစ်ကို အလိုအလျောက် သော့ခတ်ခြင်း
+                    return num, b.get("hash", "")
+
+    # ၂။ အကယ်၍ စက္ကန့်ပိုင်း အနည်းငယ် ကွာဟပါက လက်ရှိ Auto-tracked Modulo ဖြင့် ရယူခြင်း
+    cur_mod = system_state["active_modulo"]
     for b in blocks:
         num = b.get("number", 0)
-        if num > 0 and (num % 20 == system_state["target_modulo"]):
+        if num > 0 and (num % 20 == cur_mod):
             return num, b.get("hash", "")
 
-    # Auto fallback
+    # ၃။ အရန် fallback အနေဖြင့် နောက်ဆုံးထွက် Block ၏ Modulo 10 အား ရယူခြင်း
     for b in blocks:
         num = b.get("number", 0)
         if num > 0 and (num % 20 == 10):
@@ -116,7 +136,8 @@ def parse_trx_hash(hash_str):
     side = "BIG" if last_num >= 5 else "SMALL"
     return last_num, side
 
-def evaluate_sniper_v2(history):
+# --- Sniper Shot V3 Trend Engine (Window 50) ---
+def evaluate_sniper_v3_pure(history):
     if len(history) < 6:
         return None, "Warming Up"
 
@@ -126,22 +147,33 @@ def evaluate_sniper_v2(history):
     b_count = macro_50.count("B")
     s_count = macro_50.count("S")
 
-    if last_5 == "SSSSS" and s_count >= 26:
-        return "BIG", "Macro Exhaustion Fade"
-    elif last_5 == "BBBBB" and b_count >= 26:
-        return "SMALL", "Macro Exhaustion Fade"
-    elif len(macro_50) >= 20:
-        if s_count >= 28 and last_5 == "SSSBB":
-            return "SMALL", "Macro Downtrend Pullback"
-        elif b_count >= 28 and last_5 == "BBBSS":
-            return "BIG", "Macro Uptrend Pullback"
-    if last_5 == "SSBSS":
-        return "SMALL", "Trend Continuation"
-    elif last_6 == "BBBSSS":
-        return "BIG", "Symmetry Balance"
+    # B Trend (Uptrend: Macro 50 တွင် B >= 28)
+    if b_count >= 28:
+        if last_6 == "SBBBSS":
+            return "BIG", "📈 B-Trend Rebound [53.0%]"
+        elif last_6 == "SSSBBB":
+            return "BIG", "📈 B-Trend Deep Resumption [52.9%]"
+        elif last_6 == "SBSBSB":
+            return "BIG", "📈 B-Trend Alt Breakout [51.9%]"
+        elif last_5 == "BBBBB":
+            return "SMALL", "⚡️ B-Trend Exhaustion Fade [51.3%]"
+
+    # S Trend (Downtrend: Macro 50 တွင် S >= 28)
+    elif s_count >= 28:
+        if last_6 == "BSBBBS":
+            return "SMALL", "📉 S-Trend Continuation [53.3%]"
+        elif last_6 == "SBBBSS":
+            return "SMALL", "📉 S-Trend Breakdown Follow [53.2%]"
+        elif last_6 == "BBBSSS":
+            return "BIG", "⚖️ S-Trend Exhaustion Pivot [52.8%]"
+        elif last_6 == "SSSSBB":
+            return "SMALL", "📉 S-Trend Pullback Resumption [52.0%]"
+        elif last_5 == "SSSSS":
+            return "BIG", "⚡️ S-Trend Exhaustion Fade [50.6%]"
 
     return None, "စောင့်ဆိုင်းဆဲ"
 
+# --- Live Execution Worker ---
 async def sniper_standalone_worker(app):
     await asyncio.sleep(2)
     while True:
@@ -151,20 +183,21 @@ async def sniper_standalone_worker(app):
                 now = datetime.now(tz_mm)
                 today_str = now.strftime("%Y-%m-%d")
 
+                # မနက် ၆:၀၀ နာရီ Reset
                 if sniper_tracker["current_date"] != today_str and now.hour == 6 and now.minute == 0:
                     sniper_tracker["current_date"] = today_str
                     sniper_tracker["today_wins"] = 0
                     sniper_tracker["today_losses"] = 0
                     save_stats()
 
-                # Period Formula
+                # Sentinel 24 အတိုင်း တိကျသော Period Sync Formula: (total_minutes - 389)
                 total_minutes = now.hour * 60 + now.minute
                 base_seq = (total_minutes - 389) % 1440
                 if base_seq <= 0:
                     base_seq += 1440
 
                 raw_blocks = fetch_tron_blocks()
-                curr_num, curr_hash = get_settled_6lottery_block(raw_blocks)
+                curr_num, curr_hash = get_exact_settled_6lottery_block(raw_blocks)
 
                 if curr_num > 0 and curr_num != system_state["last_reported_block"]:
                     num_val, side_val = parse_trx_hash(curr_hash)
@@ -182,7 +215,7 @@ async def sniper_standalone_worker(app):
                         next_seq = 1 if base_seq >= 1440 else base_seq + 1
                         next_tail = str(next_seq)[-3:].zfill(3)
 
-                        # ၁။ Win / Loss အတိုကောက် စစ်ဆေးခြင်း
+                        # ၁။ Signal Win / Loss စာတို အတိုကောက် ထုတ်ပြန်ခြင်း
                         sn_pending = system_state["sniper_pending"]
                         if sn_pending and sn_pending["period"] == period_tail:
                             is_win = (side_val == sn_pending["choice"])
@@ -204,8 +237,8 @@ async def sniper_standalone_worker(app):
                                 pass
                             system_state["sniper_pending"] = None
 
-                        # ၂။ Sniper Setup စစ်ဆေးခြင်း
-                        sniper_choice, setup_status = evaluate_sniper_v2(system_state["history_bs"])
+                        # ၂။ Sniper Setup စစ်ဆေးပြီး Alert / Waiting ပို့ခြင်း
+                        sniper_choice, setup_status = evaluate_sniper_v3_pure(system_state["history_bs"])
 
                         if sniper_choice:
                             system_state["sniper_pending"] = {
@@ -216,7 +249,8 @@ async def sniper_standalone_worker(app):
                             alert_msg = (
                                 f"🎯 **[SNIPER ALERT] #{next_tail}**\n"
                                 f"👉 **{sniper_choice} ထိုးရန်** 💎\n"
-                                f"📊 Setup: `{setup_status}`"
+                                f"📊 Setup: `{setup_status}`\n"
+                                f"Signal မှန်ရင် အောင်ပွဲခံမယ်။"
                             )
                             try:
                                 await app.bot.send_message(chat_id=SNIPER_CHANNEL_ID, text=alert_msg, parse_mode="Markdown")
@@ -225,7 +259,8 @@ async def sniper_standalone_worker(app):
                         else:
                             short_wait = (
                                 f"⏳ **#{period_tail}:** {num_val} [{side_val}] (Block: `{curr_num}`)\n"
-                                f"🎯 **#{next_tail}:** စောင့်ကြည့်ဆဲ (W:{sniper_tracker['today_wins']} | L:{sniper_tracker['today_losses']})"
+                                f"🎯 **#{next_tail}:** စောင့်ကြည့်ဆဲ (W:{sniper_tracker['today_wins']} | L:{sniper_tracker['today_losses']})\n"
+                                f"🔫 ပစ်မှတ်ကောင်းကို ရှာဖွေနေသည်။"
                             )
                             try:
                                 await app.bot.send_message(chat_id=SNIPER_CHANNEL_ID, text=short_wait, parse_mode="Markdown")
@@ -240,7 +275,7 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != MY_ADMIN_ID:
         return
     system_state["is_running"] = True
-    await update.message.reply_text("🎯 **Sniper Bot Online!**")
+    await update.message.reply_text("🎯 **Sniper Bot V3 Pure Online!**")
 
 async def post_init(application):
     asyncio.create_task(sniper_standalone_worker(application))
