@@ -92,15 +92,12 @@ def fetch_tron_blocks():
 
 # --- 100% Zero-Drift Timestamp & Dynamic Modulo Engine ---
 def get_exact_settled_6lottery_block(blocks):
-    """
-    ၆ထီ အသုံးပြုသော :54 စက္ကန့် Block ကို Timestamp ဖြင့် တိုက်ရိုက်ရှာဖွေပြီး Modulo အလိုအလျောက် ထိန်းညှိခြင်း
-    """
     if not blocks:
         return 0, ""
 
     tz_mm = timezone(timedelta(hours=6, minutes=30))
 
-    # ၁။ ပြီးဆုံးသွားသော မိနစ်၏ :53 မှ :56 စက္ကန့်အတွင်း Tron ကွန်ရက်ပေါ် တကယ်ထွက်ခဲ့သော Block ကို အရင်ရှာဖွေခြင်း
+    # ၁။ ပြီးဆုံးသွားသော မိနစ်၏ :53 မှ :56 စက္ကန့်အတွင်း Tron ပေါ်ထွက်ခဲ့သော Block ကို အရင်ရှာဖွေခြင်း
     for b in blocks:
         ts_ms = b.get("timestamp", 0)
         if ts_ms > 0:
@@ -108,17 +105,17 @@ def get_exact_settled_6lottery_block(blocks):
             if 53 <= dt.second <= 56:
                 num = b.get("number", 0)
                 if num > 0:
-                    system_state["active_modulo"] = num % 20  # Modulo အသစ်ကို အလိုအလျောက် သော့ခတ်ခြင်း
+                    system_state["active_modulo"] = num % 20
                     return num, b.get("hash", "")
 
-    # ၂။ အကယ်၍ စက္ကန့်ပိုင်း အနည်းငယ် ကွာဟပါက လက်ရှိ Auto-tracked Modulo ဖြင့် ရယူခြင်း
+    # ၂။ အကယ်၍ ကွာဟပါက လက်ရှိ Auto-tracked Modulo ဖြင့် ရယူခြင်း
     cur_mod = system_state["active_modulo"]
     for b in blocks:
         num = b.get("number", 0)
         if num > 0 and (num % 20 == cur_mod):
             return num, b.get("hash", "")
 
-    # ၃။ အရန် fallback အနေဖြင့် နောက်ဆုံးထွက် Block ၏ Modulo 10 အား ရယူခြင်း
+    # ၃။ အရန် fallback
     for b in blocks:
         num = b.get("number", 0)
         if num > 0 and (num % 20 == 10):
@@ -190,7 +187,7 @@ async def sniper_standalone_worker(app):
                     sniper_tracker["today_losses"] = 0
                     save_stats()
 
-                # Sentinel 24 အတိုင်း တိကျသော Period Sync Formula: (total_minutes - 389)
+                # 6Lottery Period Sync (Sentinel 24 အတိုင်း - 389)
                 total_minutes = now.hour * 60 + now.minute
                 base_seq = (total_minutes - 389) % 1440
                 if base_seq <= 0:
@@ -215,7 +212,7 @@ async def sniper_standalone_worker(app):
                         next_seq = 1 if base_seq >= 1440 else base_seq + 1
                         next_tail = str(next_seq)[-3:].zfill(3)
 
-                        # ၁။ Signal Win / Loss စာတို အတိုကောက် ထုတ်ပြန်ခြင်း
+                        # ၁။ Signal Win / Loss စာတို သစ်များ ထုတ်ပြန်ခြင်း
                         sn_pending = system_state["sniper_pending"]
                         if sn_pending and sn_pending["period"] == period_tail:
                             is_win = (side_val == sn_pending["choice"])
@@ -223,12 +220,21 @@ async def sniper_standalone_worker(app):
                                 system_state["sniper_win_streak"] += 1
                                 sniper_tracker["today_wins"] += 1
                                 sniper_tracker["alltime_wins"] += 1
-                                res_msg = f"🏆 WIN #{period_tail}: {num_val} [{side_val}] ✅ (W:{sniper_tracker['today_wins']} | L:{sniper_tracker['today_losses']})"
+                                res_msg = (
+                                    f"🏆 WIN #{period_tail}: {num_val} [{side_val}] ✅\n"
+                                    f"🎉 Boom🔥 (W:{sniper_tracker['today_wins']} | L:{sniper_tracker['today_losses']})\n"
+                                    f"🎊 Mission Complete.\n"
+                                    f"💰 ငွေထုပ်ပိုက်မယ်။"
+                                )
                             else:
                                 system_state["sniper_win_streak"] = 0
                                 sniper_tracker["today_losses"] += 1
                                 sniper_tracker["alltime_losses"] += 1
-                                res_msg = f"🌧 LOSS #{period_tail}: {num_val} [{side_val}] ❌ (W:{sniper_tracker['today_wins']} | L:{sniper_tracker['today_losses']})"
+                                res_msg = (
+                                    f"❌ LOSS #{period_tail}: {num_val} [{side_val}] ❌ (W:{sniper_tracker['today_wins']} | L:{sniper_tracker['today_losses']})\n"
+                                    f"🥺 Target Miss\n"
+                                    f"🤧 ကံမကောင်းပါ။"
+                                )
 
                             save_stats()
                             try:
@@ -237,7 +243,7 @@ async def sniper_standalone_worker(app):
                                 pass
                             system_state["sniper_pending"] = None
 
-                        # ၂။ Sniper Setup စစ်ဆေးပြီး Alert / Waiting ပို့ခြင်း
+                        # ၂။ V3 Pure Engine စစ်ဆေးပြီး Alert / Waiting ပို့ခြင်း
                         sniper_choice, setup_status = evaluate_sniper_v3_pure(system_state["history_bs"])
 
                         if sniper_choice:
@@ -247,10 +253,15 @@ async def sniper_standalone_worker(app):
                                 "setup": setup_status
                             }
                             alert_msg = (
-                                f"🎯 **[SNIPER ALERT] #{next_tail}**\n"
-                                f"👉 **{sniper_choice} ထိုးရန်** 💎\n"
-                                f"📊 Setup: `{setup_status}`\n"
-                                f"Signal မှန်ရင် အောင်ပွဲခံမယ်။"
+                                f"🚨 **Sniper Shot Alert** 🚨\n"
+                                f"━━━━━━━━━━━━━━━━━━\n"
+                                f"🗯 ပစ်မှတ်တွေ့ပီ\n"
+                                f"🎯 **Target Lock - #{next_tail}**\n"
+                                f"💣 **{sniper_choice} ထိုးရန် ❗**\n"
+                                f"📊 **Setup:**\n"
+                                f"{setup_status}\n"
+                                f"**Signal Power - [Head Shot]**\n"
+                                f"━━━━━━━━━━━━━━━━━━"
                             )
                             try:
                                 await app.bot.send_message(chat_id=SNIPER_CHANNEL_ID, text=alert_msg, parse_mode="Markdown")
