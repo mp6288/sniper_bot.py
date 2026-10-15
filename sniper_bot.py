@@ -159,7 +159,7 @@ async def sniper_standalone_worker(app):
 
                 # Period Formula
                 total_minutes = now.hour * 60 + now.minute
-                base_seq = (total_minutes - 390) % 1440
+                base_seq = (total_minutes - 389) % 1440
                 if base_seq <= 0:
                     base_seq += 1440
 
