@@ -1,13 +1,32 @@
 import os
 import time
 import asyncio
+import threading
 import requests
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Bot
 
-# --- Configuration ---
+# --- Configuration (Channel ID & Token တိကျစွာ ထည့်သွင်းထားပါသည်) ---
 BOT_TOKEN = "7547900898:AAFiF4E1w4Dq-x73F3W0y4JzB-hK7V4nQ8A"
-CHANNEL_ID = "--1004325746548"
+CHANNEL_ID = "-1004325746548"
 bot = Bot(token=BOT_TOKEN)
+
+# --- Render Port Error ကို ဖြေရှင်းပေးမည့် Web Server ---
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    server.serve_forever()
+
+threading.Thread(target=run_web_server, daemon=True).start()
 
 # --- Tracking State Variables ---
 last_processed_block = None
@@ -72,7 +91,7 @@ async def main_worker_loop():
     global total_signals, win_count, loss_count
     global current_streak_type, current_streak_count, max_win_streak, max_loss_streak
 
-    print("🎯 Sniper Bot Engine V3.2 Active...")
+    print("🎯 Sniper Bot Engine V3.2 Online...", flush=True)
 
     while True:
         try:
@@ -81,8 +100,6 @@ async def main_worker_loop():
             if block_num and block_num != last_processed_block:
                 last_processed_block = block_num
                 current_period = (block_num % 1000)
-
-                # ၆ထီနှင့် တိုက်စစ်ရန် Hash အဆုံးပိုင်း ၄ လုံး
                 short_hash = f"**{block_hash[-4:]}" if block_hash else "N/A"
 
                 # ==========================================
@@ -129,14 +146,14 @@ async def main_worker_loop():
                 else:
                     result_msg = f"⌛️ #{current_period:03d}: {num_val} {side_val} (Hash: {short_hash})\n"
 
-                # History စာရင်းသွင်းခြင်း
+                # History မှတ်တမ်းသွင်းခြင်း
                 short_bs = "B" if side_val == "BIG" else "S"
                 history_50_rounds.append(short_bs)
                 if len(history_50_rounds) > 50:
                     history_50_rounds.pop(0)
 
                 # ==========================================
-                # အဆင့် ၂: Strategy စစ်ဆေးပြီး အောက်ကနေ တွဲပို့ခြင်း
+                # အဆင့် ၂: Strategy စစ်ဆေးပြီး အောက်ကနေ တွဲဖက်ပို့ခြင်း
                 # ==========================================
                 next_period = (current_period + 1) % 1000
                 sniper_signal, setup_name = check_sniper_strategy(history_50_rounds)
@@ -171,7 +188,7 @@ async def main_worker_loop():
             await asyncio.sleep(2)
 
         except Exception as e:
-            print(f"Loop Error: {e}")
+            print(f"Loop Error: {e}", flush=True)
             await asyncio.sleep(2)
 
 if __name__ == "__main__":
