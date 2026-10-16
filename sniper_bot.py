@@ -7,7 +7,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Bot
 
 # --- Configuration (Channel ID & Token တိကျစွာ ထည့်သွင်းထားပါသည်) ---
-BOT_TOKEN = "8923086070:AAG_lr9dk1krcInBqi47bnwOq6002OKU-1w""
+BOT_TOKEN = "8923086070:AAG_lr9dk1krcInBqi47bnwOq6002OKU-1w"
 CHANNEL_ID = "-1004325746548"
 bot = Bot(token=BOT_TOKEN)
 
