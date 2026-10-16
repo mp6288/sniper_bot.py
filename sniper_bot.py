@@ -37,7 +37,6 @@ threading.Thread(target=run_server, daemon=True).start()
 # ၃။ SELF-PING KEEP-ALIVE WORKER (Render အိပ်မပျော်စေမည့် စနစ်)
 # ========================================================
 def self_ping_worker():
-    """Render Free Tier အိပ်မပျော်သွားစေရန် ၅ မိနစ်တစ်ကြိမ် Ping ပြုလုပ်ခြင်း"""
     render_url = os.environ.get("RENDER_EXTERNAL_URL", "https://sniper-shot-v1.onrender.com")
     while True:
         try:
@@ -67,6 +66,38 @@ max_win_streak = 0
 max_loss_streak = 0
 
 history_50_rounds = []
+
+# ========================================================
+# ၅။ PRE-FILL HISTORY (Bot စတင်သည်နှင့် ၅၀ ပွဲ ကြိုတင်ဆွဲတင်ခြင်း)
+# ========================================================
+def prefill_history():
+    """၆ထီနှင့် ကိုက်ညီသော Block ၅၀ စာ B/S ကို ချက်ချင်း ကြိုဆွဲယူခြင်း"""
+    global history_50_rounds
+    try:
+        url = "https://apilist.tronscanapi.com/api/block?sort=-number&limit=100"
+        res = requests.get(url, timeout=10).json()
+        blocks = res.get('data', [])
+        
+        # Block % 20 == 0 ဖြစ်သော ၆ထီ Block များကိုသာ စစ်ထုတ်ခြင်း
+        lottery_blocks = [b for b in blocks if b['number'] % 20 == 0]
+        lottery_blocks = lottery_blocks[:50]
+        lottery_blocks.reverse() # အဟောင်းမှ အသစ်သို့ စီတန်းခြင်း
+        
+        history = []
+        for b in lottery_blocks:
+            b_hash = b['hash']
+            for char in reversed(b_hash):
+                if char.isdigit():
+                    history.append("B" if int(char) >= 5 else "S")
+                    break
+        
+        history_50_rounds = history
+        print(f"✅ Pre-filled {len(history_50_rounds)} rounds of 6Lottery data successfully!", flush=True)
+    except Exception as e:
+        print(f"Pre-fill Error: {e}", flush=True)
+
+# စတင်ချိန်တွင် ချက်ချင်း ဆွဲတင်ခြင်း
+prefill_history()
 
 def get_6lottery_tron_data():
     """၆ထီ၏ TRX Wingo 1M အတိုင်း တိကျသော Block နှင့် Hash ကို ရယူခြင်း"""
@@ -128,7 +159,7 @@ async def main_worker_loop():
     global total_signals, win_count, loss_count
     global current_streak_type, current_streak_count, max_win_streak, max_loss_streak
 
-    print("🎯 Sniper Bot Engine (Noti Header Mode) Active...", flush=True)
+    print("🎯 Sniper Bot Engine (Pre-filled High-Speed Mode) Active...", flush=True)
 
     while True:
         try:
@@ -138,6 +169,7 @@ async def main_worker_loop():
             # ၆ထီ အလှည့်နံပါတ် တွက်ချက်ခြင်း
             expected_period = (total_minutes - 390) % 1440
 
+            # အလှည့်အသစ် ရောက်သည်နှင့် စက္ကန့်ပိုင်းအတွင်း ချက်ချင်းဖမ်းယူမည်
             if expected_period != last_processed_period:
                 block_num, block_hash, num_val, side_val = get_6lottery_tron_data()
 
@@ -146,7 +178,7 @@ async def main_worker_loop():
                     current_period = expected_period
                     short_hash = f"**{block_hash[-4:]}" if block_hash else "N/A"
 
-                    # ၁။ ရလဒ်စာတို ထုတ်ပြန်ခြင်း (Notification တွင် သိသာစေရန် ထိပ်ဆုံးမှ ခေါင်းစဉ်ထည့်ထားသည်)
+                    # ၁။ ရလဒ်စာတို ထုတ်ပြန်ခြင်း
                     if active_target_period == current_period:
                         if side_val == target_bet_side:
                             win_count += 1
@@ -199,7 +231,7 @@ async def main_worker_loop():
                     if len(history_50_rounds) > 50:
                         history_50_rounds.pop(0)
 
-                    # ၂။ နောက်တစ်ပွဲအတွက် Signal စစ်ဆေးပြီး အချိန်မီ အလျင်အမြန် ပို့ဆောင်ခြင်း
+                    # ၂။ Strategy စစ်ဆေးပြီး အချိန်မီ အလျင်အမြန် ပို့ဆောင်ခြင်း
                     next_period = (current_period + 1) % 1440
                     sniper_signal, setup_name = check_sniper_strategy(history_50_rounds)
 
