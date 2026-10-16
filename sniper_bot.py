@@ -73,7 +73,7 @@ ANCHOR_PERIOD = 786
 ANCHOR_BLOCK = 87160998
 
 # ========================================================
-# ၅။ ၆ထီ တိကျသော BLOCK & HASH ရယူခြင်း (၁၀၀% တိုက်ရိုက်စနစ်)
+# ၅။ ၆ထီ တိကျသော BLOCK & HASH ရယူခြင်း (အမြဲမှန်စနစ်)
 # ========================================================
 def get_exact_6lottery_block(period_num):
     """၆ထီ၏ Block အတိုင်း နံပါတ်တိကျစွာ တိုက်ရိုက် ခေါ်ယူခြင်း"""
@@ -82,15 +82,13 @@ def get_exact_6lottery_block(period_num):
         url = f"https://apilist.tronscanapi.com/api/block?number={target_block_num}"
         res = requests.get(url, timeout=5).json()
         
-        # Block data ထဲမှ ရယူခြင်း
         data = res.get('data', [])
-        block_info = data[0] if data else res
+        block_info = data[0] if (data and isinstance(data, list)) else res
         
         block_hash = block_info.get('hash')
         if not block_hash:
             return None, None, None, None
 
-        # ၆ထီ စည်းမျဉ်းအတိုင်း Hash အဆုံး ဂဏန်းကို ရှာခြင်း
         last_digit = None
         for char in reversed(block_hash):
             if char.isdigit():
@@ -147,9 +145,9 @@ async def main_worker_loop():
     global total_signals, win_count, loss_count
     global current_streak_type, current_streak_count, max_win_streak, max_loss_streak
 
-    print("🎯 Sniper Bot Exact-Block Sync Engine Active...", flush=True)
+    print("🎯 Sniper Bot Continuous-Sync Engine Active...", flush=True)
 
-    # ပထမဆုံး စတင်ချိန်တွင် တွက်ချက်ပြီး Pre-fill ပြုလုပ်ခြင်း
+    # ပထမဆုံး စတင်ချိန်တွင် ဒေတာ အဆင်သင့် ဆွဲယူခြင်း
     now_init = time.gmtime(time.time() + 6.5 * 3600)
     init_period = (now_init.tm_hour * 60 + now_init.tm_min - 389) % 1440
     prefill_history(init_period)
@@ -158,10 +156,11 @@ async def main_worker_loop():
         try:
             t = time.gmtime(time.time() + 6.5 * 3600)
             total_minutes = t.tm_hour * 60 + t.tm_min
+            # ၆ထီ ပြီးဆုံးသွားသော အလှည့်နံပါတ် (389 ဖြင့် ကွက်တိကျစေသည်)
             expected_period = (total_minutes - 389) % 1440
 
-            # အလှည့်ပြီးဆုံးပြီး စက္ကန့် ၅၅ ကျော်တွင် Block အတိအကျကို ခေါ်ယူမည်
-            if expected_period != last_processed_period and t.tm_sec >= 55:
+            # အလှည့်အသစ် ရောက်သည်နှင့် စက္ကန့် ၅၅ စောင့်မနေတော့ဘဲ Block ရရှိသည်နှင့် ချက်ချင်း စာပို့မည်
+            if expected_period != last_processed_period:
                 block_num, block_hash, num_val, side_val = get_exact_6lottery_block(expected_period)
 
                 if block_num and block_hash:
@@ -253,11 +252,11 @@ async def main_worker_loop():
                         )
                         await bot.send_message(chat_id=CHANNEL_ID, text=result_msg)
 
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1)
 
         except Exception as e:
             print(f"Loop Error: {e}", flush=True)
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)
 
 if __name__ == "__main__":
     asyncio.run(main_worker_loop())
