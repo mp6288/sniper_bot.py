@@ -7,10 +7,10 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Bot
 
 # ========================================================
-# ၁။ CONFIGURATION (Token & Channel ID)
+# ၁။ CONFIGURATION (Token & Channel ID အစစ်အမှန်များ)
 # ========================================================
-BOT_TOKEN = "8923086070:AAFhc6g7npe9Cw9p1zKESXVRw8QN24y7CNo"  
-CHANNEL_ID = "-1004325746548"                                
+BOT_TOKEN = "8923086070:AAFhc6g7npe9Cw9p1zKESXVRw8QN24y7CNo"
+CHANNEL_ID = "-1004325746548"
 bot = Bot(token=BOT_TOKEN)
 
 # ========================================================
@@ -111,19 +111,18 @@ async def main_worker_loop():
     global total_signals, win_count, loss_count
     global current_streak_type, current_streak_count, max_win_streak, max_loss_streak
 
-    print("🎯 Sniper Bot Engine (6Lottery Sync Mode) Active...", flush=True)
+    print("🎯 Sniper Bot Engine (Fast Sync 6Lottery Mode) Active...", flush=True)
 
     while True:
         try:
-            # မြန်မာစံတော်ချိန် (UTC+6:30) ဖြင့် Sentinel 24 ဖော်မြူလာအတိုင်း တိကျစွာ တွက်ချက်ခြင်း
             t = time.gmtime(time.time() + 6.5 * 3600)
             total_minutes = t.tm_hour * 60 + t.tm_min
             
-            # Sentinel 24 ၏ သံမဏိ ဖော်မြူလာ (၆ထီ အလှည့်နံပါတ် တထပ်တည်း ကွက်တိကျစေသည်)
+            # ၆ထီ ပြီးဆုံးသွားသော အလှည့်နံပါတ် (Timing အမြန်စနစ်ဖြင့် ကွက်တိကျစေခြင်း)
             expected_period = (total_minutes - 390) % 1440
 
-            # စက္ကန့် ၅၀ ကျော် အလှည့်ပြီးဆုံးချိန်တွင် အလှည့်အသစ်ကို တစ်ကြိမ်သာ ဒေတာရယူမည်
-            if expected_period != last_processed_period and t.tm_sec >= 50:
+            # အလှည့်အသစ် ရောက်သည်နှင့် စက္ကန့်ပိုင်းအတွင်း ချက်ချင်းဖမ်းယူမည်
+            if expected_period != last_processed_period:
                 block_num, block_hash, num_val, side_val = get_6lottery_tron_data()
 
                 if block_num:
@@ -131,9 +130,7 @@ async def main_worker_loop():
                     current_period = expected_period
                     short_hash = f"**{block_hash[-4:]}" if block_hash else "N/A"
 
-                    # ==========================================
-                    # အဆင့် ၁: ၆ထီ တိုက်ရိုက်ကိုက်ညီသော B/S ရလဒ်စာတို
-                    # ==========================================
+                    # ၁။ ရလဒ်စာတို ပို့ဆောင်ခြင်း
                     if active_target_period == current_period:
                         if side_val == target_bet_side:
                             win_count += 1
@@ -181,9 +178,7 @@ async def main_worker_loop():
                     if len(history_50_rounds) > 50:
                         history_50_rounds.pop(0)
 
-                    # ==========================================
-                    # အဆင့် ၂: Sniper Signal စစ်ဆေးပြီး အောက်ကနေ တွဲဖက်ပို့ခြင်း
-                    # ==========================================
+                    # ၂။ နောက်တစ်ပွဲအတွက် Signal စစ်ဆေးပြီး အချိန်မီ အလျင်အမြန် ပို့ဆောင်ခြင်း
                     next_period = (current_period + 1) % 1440
                     sniper_signal, setup_name = check_sniper_strategy(history_50_rounds)
 
@@ -214,11 +209,11 @@ async def main_worker_loop():
                         )
                         await bot.send_message(chat_id=CHANNEL_ID, text=result_msg)
 
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
 
         except Exception as e:
             print(f"Loop Error: {e}", flush=True)
-            await asyncio.sleep(2)
+            await asyncio.sleep(1)
 
 if __name__ == "__main__":
     asyncio.run(main_worker_loop())
