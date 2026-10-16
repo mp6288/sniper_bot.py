@@ -2,6 +2,7 @@ import os
 import time
 import asyncio
 import threading
+import urllib.request
 import requests
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Bot
@@ -14,7 +15,7 @@ CHANNEL_ID = "-1004325746548"
 bot = Bot(token=BOT_TOKEN)
 
 # ========================================================
-# ၂။ RENDER HEALTH CHECK SERVER (Port Error မတက်စေရန်)
+# ၂။ RENDER HEALTH CHECK SERVER (Port 10000)
 # ========================================================
 class SimpleHealth(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -33,7 +34,25 @@ def run_server():
 threading.Thread(target=run_server, daemon=True).start()
 
 # ========================================================
-# ၃။ STATE VARIABLES & COUNTERS
+# ၃။ SELF-PING KEEP-ALIVE WORKER (Render အိပ်မပျော်စေမည့် စနစ်)
+# ========================================================
+def self_ping_worker():
+    """Render Free Tier အိပ်မပျော်သွားစေရန် ၅ မိနစ်တစ်ကြိမ် အလိုအလျောက် Ping ပြုလုပ်ခြင်း"""
+    render_url = os.environ.get("RENDER_EXTERNAL_URL", "https://sniper-shot-v1.onrender.com")
+    while True:
+        try:
+            time.sleep(300)  # ၅ မိနစ်တိုင်း ပုံမှန် Ping မည်
+            req = urllib.request.Request(render_url, headers={"User-Agent": "SelfPingBot/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as response:
+                pass
+            print("🔔 Keep-Alive Ping Successful", flush=True)
+        except Exception as e:
+            print(f"Ping Error: {e}", flush=True)
+
+threading.Thread(target=self_ping_worker, daemon=True).start()
+
+# ========================================================
+# ၄။ STATE VARIABLES & COUNTERS
 # ========================================================
 last_processed_period = None
 active_target_period = None
@@ -56,7 +75,6 @@ def get_6lottery_tron_data():
         res = requests.get(url, timeout=5).json()
         blocks = res.get('data', [])
         
-        # ၆ထီသည် Block နံပါတ် အဆုံးသတ် ၂၀ ခြား (Block % 20 == 0) ကိုသာ အသုံးပြုသည်
         target_block = None
         for b in blocks:
             if b['number'] % 20 == 0:
@@ -69,7 +87,6 @@ def get_6lottery_tron_data():
         block_num = target_block['number']
         block_hash = target_block['hash']
 
-        # ၆ထီ စည်းမျဉ်းအတိုင်း Hash ၏ အနောက်ဘက်ဆုံး ဂဏန်းကို ရှာခြင်း
         last_digit = None
         for char in reversed(block_hash):
             if char.isdigit():
@@ -111,14 +128,14 @@ async def main_worker_loop():
     global total_signals, win_count, loss_count
     global current_streak_type, current_streak_count, max_win_streak, max_loss_streak
 
-    print("🎯 Sniper Bot Engine (Fast Sync 6Lottery Mode) Active...", flush=True)
+    print("🎯 Sniper Bot Engine (24/7 Keep-Alive Mode) Active...", flush=True)
 
     while True:
         try:
             t = time.gmtime(time.time() + 6.5 * 3600)
             total_minutes = t.tm_hour * 60 + t.tm_min
             
-            # ၆ထီ ပြီးဆုံးသွားသော အလှည့်နံပါတ် (Timing အမြန်စနစ်ဖြင့် ကွက်တိကျစေခြင်း)
+            # ၆ထီ အလှည့်နံပါတ် တွက်ချက်ခြင်း
             expected_period = (total_minutes - 390) % 1440
 
             # အလှည့်အသစ် ရောက်သည်နှင့် စက္ကန့်ပိုင်းအတွင်း ချက်ချင်းဖမ်းယူမည်
