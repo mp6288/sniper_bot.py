@@ -151,14 +151,14 @@ async def main_worker_loop():
 
     # ပထမဆုံး စတင်ချိန်တွင် တွက်ချက်ပြီး Pre-fill ပြုလုပ်ခြင်း
     now_init = time.gmtime(time.time() + 6.5 * 3600)
-    init_period = (now_init.tm_hour * 60 + now_init.tm_min - 390) % 1440
+    init_period = (now_init.tm_hour * 60 + now_init.tm_min - 389) % 1440
     prefill_history(init_period)
 
     while True:
         try:
             t = time.gmtime(time.time() + 6.5 * 3600)
             total_minutes = t.tm_hour * 60 + t.tm_min
-            expected_period = (total_minutes - 390) % 1440
+            expected_period = (total_minutes - 389) % 1440
 
             # အလှည့်ပြီးဆုံးပြီး စက္ကန့် ၅၅ ကျော်တွင် Block အတိအကျကို ခေါ်ယူမည်
             if expected_period != last_processed_period and t.tm_sec >= 55:
