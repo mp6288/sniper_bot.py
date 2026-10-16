@@ -120,7 +120,7 @@ async def main_worker_loop():
             total_minutes = t.tm_hour * 60 + t.tm_min
             
             # Sentinel 24 ၏ သံမဏိ ဖော်မြူလာ (၆ထီ အလှည့်နံပါတ် တထပ်တည်း ကွက်တိကျစေသည်)
-            expected_period = (total_minutes - 389) % 1440
+            expected_period = (total_minutes - 390) % 1440
 
             # စက္ကန့် ၅၀ ကျော် အလှည့်ပြီးဆုံးချိန်တွင် အလှည့်အသစ်ကို တစ်ကြိမ်သာ ဒေတာရယူမည်
             if expected_period != last_processed_period and t.tm_sec >= 50:
