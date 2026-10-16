@@ -179,7 +179,7 @@ async def main_worker_loop():
                             f"💣 {sniper_signal} ထိုးရန် ❗\n"
                             f"📊 Setup:\n{setup_name}\n"
                             f"📈 ယနေ့ Signal ပွဲစဉ်: #{total_signals} ကြိမ်မြောက်\n"
-                            f"Signal Power - Head Shot\n"
+                            f"Signal Power - Head Shotပစ်ရန်\n"
                             f"━━━━━━━━━━━━━━━━━━━━"
                         )
                         await bot.send_message(chat_id=CHANNEL_ID, text=alert_msg)
