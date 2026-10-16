@@ -4,6 +4,7 @@ import asyncio
 import threading
 import urllib.request
 import requests
+from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Bot
 
@@ -68,56 +69,38 @@ max_loss_streak = 0
 history_50_rounds = []
 
 # ========================================================
-# ၅။ PRE-FILL HISTORY (Bot စတင်သည်နှင့် ၅၀ ပွဲ ကြိုတင်ဆွဲတင်ခြင်း)
+# ၅။ ၆ထီ စက္ကန့် ၅၄ တိကျသော BLOCK ရယူခြင်းစနစ် (အမြဲမှန်စေမည့် Core)
 # ========================================================
-def prefill_history():
-    """၆ထီနှင့် ကိုက်ညီသော Block ၅၀ စာ B/S ကို ချက်ချင်း ကြိုဆွဲယူခြင်း"""
-    global history_50_rounds
+def get_6lottery_tron_data(target_unix_sec):
+    """၆ထီ၏ Block time (:54) နှင့် ကွက်တိကျသော Tron Block ကို ရယူခြင်း"""
     try:
-        url = "https://apilist.tronscanapi.com/api/block?sort=-number&limit=100"
-        res = requests.get(url, timeout=10).json()
-        blocks = res.get('data', [])
-        
-        # Block % 20 == 0 ဖြစ်သော ၆ထီ Block များကိုသာ စစ်ထုတ်ခြင်း
-        lottery_blocks = [b for b in blocks if b['number'] % 20 == 0]
-        lottery_blocks = lottery_blocks[:50]
-        lottery_blocks.reverse() # အဟောင်းမှ အသစ်သို့ စီတန်းခြင်း
-        
-        history = []
-        for b in lottery_blocks:
-            b_hash = b['hash']
-            for char in reversed(b_hash):
-                if char.isdigit():
-                    history.append("B" if int(char) >= 5 else "S")
-                    break
-        
-        history_50_rounds = history
-        print(f"✅ Pre-filled {len(history_50_rounds)} rounds of 6Lottery data successfully!", flush=True)
-    except Exception as e:
-        print(f"Pre-fill Error: {e}", flush=True)
-
-# စတင်ချိန်တွင် ချက်ချင်း ဆွဲတင်ခြင်း
-prefill_history()
-
-def get_6lottery_tron_data():
-    """၆ထီ၏ TRX Wingo 1M အတိုင်း တိကျသော Block နှင့် Hash ကို ရယူခြင်း"""
-    try:
-        url = "https://apilist.tronscanapi.com/api/block?sort=-number&limit=20"
+        url = "https://apilist.tronscanapi.com/api/block?sort=-number&limit=30"
         res = requests.get(url, timeout=5).json()
         blocks = res.get('data', [])
-        
-        target_block = None
+
+        if not blocks:
+            return None, None, None, None
+
+        # စက္ကန့် ၅၄ သို့မဟုတ် ၎င်းမတိုင်မီ နောက်ဆုံးထွက်ခဲ့သော Block ကို တိကျစွာ ရှာဖွေခြင်း
+        target_ms = target_unix_sec * 1000
+        best_block = None
+        min_diff = float('inf')
+
         for b in blocks:
-            if b['number'] % 20 == 0:
-                target_block = b
-                break
-                
-        if not target_block and blocks:
-            target_block = blocks[0]
+            b_ts = b['timestamp']
+            # Target အချိန်နှင့် အနီးစပ်ဆုံး ကွာဟမှုအနည်းဆုံး block
+            diff = abs(b_ts - target_ms)
+            if diff < min_diff and b_ts <= target_ms + 1000:
+                min_diff = diff
+                best_block = b
 
-        block_num = target_block['number']
-        block_hash = target_block['hash']
+        if not best_block:
+            best_block = blocks[0]
 
+        block_num = best_block['number']
+        block_hash = best_block['hash']
+
+        # ၆ထီ၏ သံမဏိစည်းမျဉ်းအတိုင်း Hash အဆုံး ဂဏန်းကို ရယူခြင်း
         last_digit = None
         for char in reversed(block_hash):
             if char.isdigit():
@@ -129,6 +112,32 @@ def get_6lottery_tron_data():
     except Exception as e:
         print(f"Tron Fetch Error: {e}", flush=True)
         return None, None, None, None
+
+def prefill_history():
+    """Bot စတင်သည်နှင့် ပြီးခဲ့သော အလှည့် ၅၀ ကို ကြိုဆွဲယူခြင်း"""
+    global history_50_rounds
+    try:
+        url = "https://apilist.tronscanapi.com/api/block?sort=-number&limit=100"
+        res = requests.get(url, timeout=10).json()
+        blocks = res.get('data', [])
+        
+        # အလှည့် ၂၀ ခြားစီ ခွဲထုတ်ယူခြင်း
+        sampled_blocks = blocks[::2][:50]
+        sampled_blocks.reverse()
+        
+        history = []
+        for b in sampled_blocks:
+            b_hash = b['hash']
+            for char in reversed(b_hash):
+                if char.isdigit():
+                    history.append("B" if int(char) >= 5 else "S")
+                    break
+        history_50_rounds = history
+        print(f"✅ Pre-filled {len(history_50_rounds)} rounds into history!", flush=True)
+    except Exception as e:
+        print(f"Pre-fill Error: {e}", flush=True)
+
+prefill_history()
 
 def check_sniper_strategy(history):
     if len(history) < 15:
@@ -159,19 +168,21 @@ async def main_worker_loop():
     global total_signals, win_count, loss_count
     global current_streak_type, current_streak_count, max_win_streak, max_loss_streak
 
-    print("🎯 Sniper Bot Engine (Pre-filled High-Speed Mode) Active...", flush=True)
+    print("🎯 Sniper Bot Engine (Exact 6Lottery Timestamp Sync) Active...", flush=True)
 
     while True:
         try:
-            t = time.gmtime(time.time() + 6.5 * 3600)
+            now_ts = int(time.time())
+            # မြန်မာစံတော်ချိန် (UTC+6:30) ဖြင့် အလှည့်နံပါတ် တွက်ချက်ခြင်း
+            t = time.gmtime(now_ts + 6.5 * 3600)
             total_minutes = t.tm_hour * 60 + t.tm_min
-            
-            # ၆ထီ အလှည့်နံပါတ် တွက်ချက်ခြင်း
             expected_period = (total_minutes - 390) % 1440
 
-            # အလှည့်အသစ် ရောက်သည်နှင့် စက္ကန့်ပိုင်းအတွင်း ချက်ချင်းဖမ်းယူမည်
-            if expected_period != last_processed_period:
-                block_num, block_hash, num_val, side_val = get_6lottery_tron_data()
+            # အလှည့်ပြီးဆုံးပြီး စက္ကန့် ၅၅ ကျော်သည်နှင့် တိကျသော Block ကို ဖမ်းယူမည်
+            if expected_period != last_processed_period and t.tm_sec >= 55:
+                # ထိုမိနစ်၏ စက္ကန့် ၅၄ သို့ ရောက်ရှိချိန် Unix timestamp
+                target_sec = now_ts - (t.tm_sec - 54)
+                block_num, block_hash, num_val, side_val = get_6lottery_tron_data(target_sec)
 
                 if block_num:
                     last_processed_period = expected_period
@@ -231,7 +242,7 @@ async def main_worker_loop():
                     if len(history_50_rounds) > 50:
                         history_50_rounds.pop(0)
 
-                    # ၂။ Strategy စစ်ဆေးပြီး အချိန်မီ အလျင်အမြန် ပို့ဆောင်ခြင်း
+                    # ၂။ နောက်တစ်ပွဲအတွက် Strategy စစ်ဆေးခြင်း
                     next_period = (current_period + 1) % 1440
                     sniper_signal, setup_name = check_sniper_strategy(history_50_rounds)
 
