@@ -6,7 +6,7 @@ from telegram import Bot
 
 # --- Configuration ---
 BOT_TOKEN = "7547900898:AAFiF4E1w4Dq-x73F3W0y4JzB-hK7V4nQ8A"
-CHANNEL_ID = "-1002345678901"
+CHANNEL_ID = "--1004325746548"
 bot = Bot(token=BOT_TOKEN)
 
 # --- Tracking State Variables ---
