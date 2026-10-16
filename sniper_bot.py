@@ -8,7 +8,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Bot
 
 # ========================================================
-# ၁။ CONFIGURATION (Token & Channel ID အစစ်အမှန်များ)
+# ၁။ CONFIGURATION (Token & Channel ID)
 # ========================================================
 BOT_TOKEN = "8923086070:AAFhc6g7npe9Cw9p1zKESXVRw8QN24y7CNo"
 CHANNEL_ID = "-1004325746548"
@@ -37,11 +37,11 @@ threading.Thread(target=run_server, daemon=True).start()
 # ၃။ SELF-PING KEEP-ALIVE WORKER (Render အိပ်မပျော်စေမည့် စနစ်)
 # ========================================================
 def self_ping_worker():
-    """Render Free Tier အိပ်မပျော်သွားစေရန် ၅ မိနစ်တစ်ကြိမ် အလိုအလျောက် Ping ပြုလုပ်ခြင်း"""
+    """Render Free Tier အိပ်မပျော်သွားစေရန် ၅ မိနစ်တစ်ကြိမ် Ping ပြုလုပ်ခြင်း"""
     render_url = os.environ.get("RENDER_EXTERNAL_URL", "https://sniper-shot-v1.onrender.com")
     while True:
         try:
-            time.sleep(300)  # ၅ မိနစ်တိုင်း ပုံမှန် Ping မည်
+            time.sleep(300)
             req = urllib.request.Request(render_url, headers={"User-Agent": "SelfPingBot/1.0"})
             with urllib.request.urlopen(req, timeout=15) as response:
                 pass
@@ -128,7 +128,7 @@ async def main_worker_loop():
     global total_signals, win_count, loss_count
     global current_streak_type, current_streak_count, max_win_streak, max_loss_streak
 
-    print("🎯 Sniper Bot Engine (24/7 Keep-Alive Mode) Active...", flush=True)
+    print("🎯 Sniper Bot Engine (Noti Header Mode) Active...", flush=True)
 
     while True:
         try:
@@ -138,7 +138,6 @@ async def main_worker_loop():
             # ၆ထီ အလှည့်နံပါတ် တွက်ချက်ခြင်း
             expected_period = (total_minutes - 390) % 1440
 
-            # အလှည့်အသစ် ရောက်သည်နှင့် စက္ကန့်ပိုင်းအတွင်း ချက်ချင်းဖမ်းယူမည်
             if expected_period != last_processed_period:
                 block_num, block_hash, num_val, side_val = get_6lottery_tron_data()
 
@@ -147,7 +146,7 @@ async def main_worker_loop():
                     current_period = expected_period
                     short_hash = f"**{block_hash[-4:]}" if block_hash else "N/A"
 
-                    # ၁။ ရလဒ်စာတို ပို့ဆောင်ခြင်း
+                    # ၁။ ရလဒ်စာတို ထုတ်ပြန်ခြင်း (Notification တွင် သိသာစေရန် ထိပ်ဆုံးမှ ခေါင်းစဉ်ထည့်ထားသည်)
                     if active_target_period == current_period:
                         if side_val == target_bet_side:
                             win_count += 1
@@ -161,6 +160,7 @@ async def main_worker_loop():
 
                             streak_text = f"🔥 {current_streak_count} ပွဲဆက်နိုင်"
                             result_msg = (
+                                f"🎯 SNIPER SHOT SIGNAL 🎯\n"
                                 f"🏆 WIN #{current_period:04d}: {num_val} [{side_val}] ✅ (Hash: {short_hash})\n"
                                 f"🎉 Boom 🔥 (W:{win_count} | L:{loss_count} | Total:{total_signals})\n"
                                 f"⚡️ အနိုင်ဆက်: {streak_text} (Max: {max_win_streak})\n"
@@ -179,6 +179,7 @@ async def main_worker_loop():
 
                             streak_text = f"⚠️ {current_streak_count} ပွဲဆက်လွဲ"
                             result_msg = (
+                                f"🎯 SNIPER SHOT SIGNAL 🎯\n"
                                 f"❌ LOSS #{current_period:04d}: {num_val} [{side_val}] ❌ (Hash: {short_hash})\n"
                                 f"🥺 Target Miss (W:{win_count} | L:{loss_count} | Total:{total_signals})\n"
                                 f"⚡️ အရှုံးဆက်: {streak_text} (Max: {max_loss_streak})\n"
@@ -187,7 +188,10 @@ async def main_worker_loop():
                         active_target_period = None
                         target_bet_side = None
                     else:
-                        result_msg = f"⌛️ #{current_period:04d}: {num_val} {side_val} (Hash: {short_hash})\n"
+                        result_msg = (
+                            f"🎯 SNIPER SHOT SIGNAL 🎯\n"
+                            f"⌛️ #{current_period:04d}: {num_val} {side_val} (Hash: {short_hash})\n"
+                        )
 
                     # History မှတ်တမ်းသွင်းခြင်း
                     short_bs = "B" if side_val == "BIG" else "S"
@@ -207,7 +211,7 @@ async def main_worker_loop():
                         await bot.send_message(chat_id=CHANNEL_ID, text=result_msg)
 
                         alert_msg = (
-                            f"🚨 Sniper Shot Alert 🚨\n"
+                            f"🎯 SNIPER SHOT ALERT 🎯\n"
                             f"━━━━━━━━━━━━━━━━━━━━\n"
                             f"🗯 ပစ်မှတ်တွေ့ပီ\n"
                             f"🎯 Target Lock - #{next_period:04d}\n"
