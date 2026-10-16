@@ -68,39 +68,29 @@ max_loss_streak = 0
 
 history_50_rounds = []
 
-# ========================================================
-# ၅။ ၆ထီ စက္ကန့် ၅၄ တိကျသော BLOCK ရယူခြင်းစနစ် (အမြဲမှန်စေမည့် Core)
-# ========================================================
-def get_6lottery_tron_data(target_unix_sec):
-    """၆ထီ၏ Block time (:54) နှင့် ကွက်တိကျသော Tron Block ကို ရယူခြင်း"""
-    try:
-        url = "https://apilist.tronscanapi.com/api/block?sort=-number&limit=30"
-        res = requests.get(url, timeout=5).json()
-        blocks = res.get('data', [])
+# Anchor Reference (၆ထီ၏ သံမဏိစံချိန်: Period 786 = Block 87160998)
+ANCHOR_PERIOD = 786
+ANCHOR_BLOCK = 87160998
 
-        if not blocks:
+# ========================================================
+# ၅။ ၆ထီ တိကျသော BLOCK & HASH ရယူခြင်း (၁၀၀% တိုက်ရိုက်စနစ်)
+# ========================================================
+def get_exact_6lottery_block(period_num):
+    """၆ထီ၏ Block အတိုင်း နံပါတ်တိကျစွာ တိုက်ရိုက် ခေါ်ယူခြင်း"""
+    target_block_num = ANCHOR_BLOCK + (period_num - ANCHOR_PERIOD) * 20
+    try:
+        url = f"https://apilist.tronscanapi.com/api/block?number={target_block_num}"
+        res = requests.get(url, timeout=5).json()
+        
+        # Block data ထဲမှ ရယူခြင်း
+        data = res.get('data', [])
+        block_info = data[0] if data else res
+        
+        block_hash = block_info.get('hash')
+        if not block_hash:
             return None, None, None, None
 
-        # စက္ကန့် ၅၄ သို့မဟုတ် ၎င်းမတိုင်မီ နောက်ဆုံးထွက်ခဲ့သော Block ကို တိကျစွာ ရှာဖွေခြင်း
-        target_ms = target_unix_sec * 1000
-        best_block = None
-        min_diff = float('inf')
-
-        for b in blocks:
-            b_ts = b['timestamp']
-            # Target အချိန်နှင့် အနီးစပ်ဆုံး ကွာဟမှုအနည်းဆုံး block
-            diff = abs(b_ts - target_ms)
-            if diff < min_diff and b_ts <= target_ms + 1000:
-                min_diff = diff
-                best_block = b
-
-        if not best_block:
-            best_block = blocks[0]
-
-        block_num = best_block['number']
-        block_hash = best_block['hash']
-
-        # ၆ထီ၏ သံမဏိစည်းမျဉ်းအတိုင်း Hash အဆုံး ဂဏန်းကို ရယူခြင်း
+        # ၆ထီ စည်းမျဉ်းအတိုင်း Hash အဆုံး ဂဏန်းကို ရှာခြင်း
         last_digit = None
         for char in reversed(block_hash):
             if char.isdigit():
@@ -108,36 +98,25 @@ def get_6lottery_tron_data(target_unix_sec):
                 break
 
         result_type = "BIG" if last_digit >= 5 else "SMALL"
-        return block_num, block_hash, last_digit, result_type
+        return target_block_num, block_hash, last_digit, result_type
     except Exception as e:
-        print(f"Tron Fetch Error: {e}", flush=True)
+        print(f"Fetch Error: {e}", flush=True)
         return None, None, None, None
 
-def prefill_history():
-    """Bot စတင်သည်နှင့် ပြီးခဲ့သော အလှည့် ၅၀ ကို ကြိုဆွဲယူခြင်း"""
+def prefill_history(current_p):
+    """Bot စတင်သည်နှင့် ပြီးခဲ့သော ၅၀ ပွဲကို တိကျစွာ ဆွဲတင်ခြင်း"""
     global history_50_rounds
     try:
-        url = "https://apilist.tronscanapi.com/api/block?sort=-number&limit=100"
-        res = requests.get(url, timeout=10).json()
-        blocks = res.get('data', [])
-        
-        # အလှည့် ၂၀ ခြားစီ ခွဲထုတ်ယူခြင်း
-        sampled_blocks = blocks[::2][:50]
-        sampled_blocks.reverse()
-        
         history = []
-        for b in sampled_blocks:
-            b_hash = b['hash']
-            for char in reversed(b_hash):
-                if char.isdigit():
-                    history.append("B" if int(char) >= 5 else "S")
-                    break
-        history_50_rounds = history
-        print(f"✅ Pre-filled {len(history_50_rounds)} rounds into history!", flush=True)
+        for p in range(current_p - 50, current_p):
+            t_b, b_h, l_d, r_t = get_exact_6lottery_block(p)
+            if r_t:
+                history.append("B" if r_t == "BIG" else "S")
+        if history:
+            history_50_rounds = history
+            print(f"✅ Pre-filled {len(history_50_rounds)} exact rounds into history!", flush=True)
     except Exception as e:
         print(f"Pre-fill Error: {e}", flush=True)
-
-prefill_history()
 
 def check_sniper_strategy(history):
     if len(history) < 15:
@@ -168,26 +147,27 @@ async def main_worker_loop():
     global total_signals, win_count, loss_count
     global current_streak_type, current_streak_count, max_win_streak, max_loss_streak
 
-    print("🎯 Sniper Bot Engine (Exact 6Lottery Timestamp Sync) Active...", flush=True)
+    print("🎯 Sniper Bot Exact-Block Sync Engine Active...", flush=True)
+
+    # ပထမဆုံး စတင်ချိန်တွင် တွက်ချက်ပြီး Pre-fill ပြုလုပ်ခြင်း
+    now_init = time.gmtime(time.time() + 6.5 * 3600)
+    init_period = (now_init.tm_hour * 60 + now_init.tm_min - 390) % 1440
+    prefill_history(init_period)
 
     while True:
         try:
-            now_ts = int(time.time())
-            # မြန်မာစံတော်ချိန် (UTC+6:30) ဖြင့် အလှည့်နံပါတ် တွက်ချက်ခြင်း
-            t = time.gmtime(now_ts + 6.5 * 3600)
+            t = time.gmtime(time.time() + 6.5 * 3600)
             total_minutes = t.tm_hour * 60 + t.tm_min
             expected_period = (total_minutes - 390) % 1440
 
-            # အလှည့်ပြီးဆုံးပြီး စက္ကန့် ၅၅ ကျော်သည်နှင့် တိကျသော Block ကို ဖမ်းယူမည်
+            # အလှည့်ပြီးဆုံးပြီး စက္ကန့် ၅၅ ကျော်တွင် Block အတိအကျကို ခေါ်ယူမည်
             if expected_period != last_processed_period and t.tm_sec >= 55:
-                # ထိုမိနစ်၏ စက္ကန့် ၅၄ သို့ ရောက်ရှိချိန် Unix timestamp
-                target_sec = now_ts - (t.tm_sec - 54)
-                block_num, block_hash, num_val, side_val = get_6lottery_tron_data(target_sec)
+                block_num, block_hash, num_val, side_val = get_exact_6lottery_block(expected_period)
 
-                if block_num:
+                if block_num and block_hash:
                     last_processed_period = expected_period
                     current_period = expected_period
-                    short_hash = f"**{block_hash[-4:]}" if block_hash else "N/A"
+                    short_hash = f"**{block_hash[-4:]}"
 
                     # ၁။ ရလဒ်စာတို ထုတ်ပြန်ခြင်း
                     if active_target_period == current_period:
