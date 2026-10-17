@@ -4,6 +4,7 @@ import asyncio
 import threading
 import urllib.request
 import requests
+from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Bot
 
@@ -53,7 +54,8 @@ threading.Thread(target=self_ping_worker, daemon=True).start()
 # ========================================================
 # ၄။ STATE VARIABLES & COUNTERS
 # ========================================================
-last_processed_period = None
+last_reported_block = None
+last_reported_period = None
 active_target_period = None
 target_bet_side = None
 
@@ -67,17 +69,31 @@ max_loss_streak = 0
 
 history_50_rounds = []
 
-def get_latest_6lottery_block():
-    """၆ထီ၏ Block time (:54) နှင့် အကိုက်ညီဆုံး Tron Block ကို ရယူခြင်း"""
+# ========================================================
+# ၅။ ၆ထီ တိကျသော BLOCK & HASH ရယူခြင်း (Sentinel 24 ကဲ့သို့ စက္ကန့် ၅၄ စနစ်)
+# ========================================================
+def fetch_exact_6lottery_block():
+    """၆ထီ၏ Block time (:54 စက္ကန့်) တွင် ထွက်ပေါ်သော Block အစစ်အမှန်ကိုသာ ရယူခြင်း"""
     try:
-        url = "https://apilist.tronscanapi.com/api/block?sort=-number&limit=20"
+        url = "https://apilist.tronscanapi.com/api/block?sort=-number&limit=25"
         res = requests.get(url, timeout=5).json()
         blocks = res.get('data', [])
-        
+
         if not blocks:
             return None, None, None, None
 
-        target_b = blocks[0]
+        # ၆ထီသည် အမြဲတမ်း :54 စက္ကန့် (သို့မဟုတ် :53-:55 စက္ကန့်) Block ကို အသုံးပြုသည်
+        target_b = None
+        for b in blocks:
+            b_ts = b['timestamp'] / 1000.0
+            dt = datetime.fromtimestamp(b_ts, tz=timezone.utc)
+            if dt.second in (53, 54, 55):
+                target_b = b
+                break
+
+        if not target_b:
+            return None, None, None, None
+
         block_num = target_b['number']
         block_hash = target_b['hash']
 
@@ -94,22 +110,26 @@ def get_latest_6lottery_block():
         return None, None, None, None
 
 def prefill_history():
-    """Bot စတင်ချိန်တွင် ပြီးခဲ့သော အလှည့် ၅၀ ကို ဒေတာဖြည့်သွင်းခြင်း"""
+    """Bot စတင်ချိန်တွင် ပြီးခဲ့သော အလှည့် ၅၀ ကို ဒေတာ ဖြည့်သွင်းခြင်း"""
     global history_50_rounds
     try:
         url = "https://apilist.tronscanapi.com/api/block?sort=-number&limit=100"
         res = requests.get(url, timeout=10).json()
         blocks = res.get('data', [])
-        history = []
-        for b in blocks[::2][:50]:
-            b_hash = b.get('hash', '')
-            for char in reversed(b_hash):
-                if char.isdigit():
-                    history.append("B" if int(char) >= 5 else "S")
-                    break
-        history.reverse()
-        history_50_rounds = history
-        print(f"✅ Pre-filled {len(history_50_rounds)} rounds into history!", flush=True)
+        
+        matched = []
+        for b in blocks:
+            b_ts = b['timestamp'] / 1000.0
+            dt = datetime.fromtimestamp(b_ts, tz=timezone.utc)
+            if dt.second in (53, 54, 55):
+                b_hash = b.get('hash', '')
+                for char in reversed(b_hash):
+                    if char.isdigit():
+                        matched.append("B" if int(char) >= 5 else "S")
+                        break
+        matched.reverse()
+        history_50_rounds = matched[-50:]
+        print(f"✅ Pre-filled {len(history_50_rounds)} exact 6Lottery rounds into history!", flush=True)
     except Exception as e:
         print(f"Pre-fill Error: {e}", flush=True)
 
@@ -140,113 +160,115 @@ def check_sniper_strategy(history):
     return None, None
 
 async def main_worker_loop():
-    global last_processed_period, active_target_period, target_bet_side
+    global last_reported_block, last_reported_period, active_target_period, target_bet_side
     global total_signals, win_count, loss_count
     global current_streak_type, current_streak_count, max_win_streak, max_loss_streak
 
-    print("🎯 Sniper Bot 1-Minute Period Sync Online...", flush=True)
+    print("🎯 Sniper Bot Exact-Sync Engine Online...", flush=True)
 
     while True:
         try:
-            # မြန်မာစံတော်ချိန် ဖြင့် လက်ရှိ အလှည့်နံပါတ် တွက်ချက်ခြင်း
+            # မြန်မာစံတော်ချိန် ဖြင့် လက်ရှိ အလှည့်နံပါတ် တွက်ချက်ခြင်း (၆ထီ တရားဝင် Period)
             t = time.gmtime(time.time() + 6.5 * 3600)
             total_minutes = t.tm_hour * 60 + t.tm_min
+            # ၆ထီ ပြီးဆုံးသွားသော အလှည့်နံပါတ် (389 ဖြင့် ကွက်တိကျသည်)
             expected_period = (total_minutes - 389) % 1440
 
-            # ၁ မိနစ်လျှင် ၁ ကြိမ်သာ အလှည့်ပြောင်းမှ စာပို့မည် (စာတိုထပ်ခြင်း လုံးဝ မရှိတော့ပါ)
-            if expected_period != last_processed_period:
-                block_num, block_hash, num_val, side_val = get_latest_6lottery_block()
+            # ၆ထီ အလှည့်ပြီးဆုံးသည့် :54 စက္ကန့် Block ကို တိကျစွာ ရှာဖွေခြင်း
+            block_num, block_hash, num_val, side_val = fetch_exact_6lottery_block()
 
-                if block_num and block_hash:
-                    last_processed_period = expected_period
-                    current_period = expected_period
-                    short_hash = f"**{block_hash[-4:]}"
+            # အလှည့်အသစ် ဖြစ်ပြီး Block အသစ် အမှန်တကယ် ထွက်လာမှသာ တစ်ကြိမ်တည်း စာပို့မည်
+            if block_num and block_num != last_reported_block and expected_period != last_reported_period:
+                last_reported_block = block_num
+                last_reported_period = expected_period
+                current_period = expected_period
+                short_hash = f"**{block_hash[-4:]}"
 
-                    # ၁။ ရလဒ်စာတို ပို့ဆောင်ခြင်း
-                    if active_target_period == current_period:
-                        if side_val == target_bet_side:
-                            win_count += 1
-                            if current_streak_type == "W":
-                                current_streak_count += 1
-                            else:
-                                current_streak_type = "W"
-                                current_streak_count = 1
-                            if current_streak_count > max_win_streak:
-                                max_win_streak = current_streak_count
-
-                            streak_text = f"🔥 {current_streak_count} ပွဲဆက်နိုင်"
-                            result_msg = (
-                                f"🎯 SNIPER SHOT SIGNAL 🎯\n"
-                                f"🏆 WIN #{current_period:04d}: {num_val} [{side_val}] ✅ (Hash: {short_hash})\n"
-                                f"🎉 Boom 🔥 (W:{win_count} | L:{loss_count} | Total:{total_signals})\n"
-                                f"⚡️ အနိုင်ဆက်: {streak_text} (Max: {max_win_streak})\n"
-                                f"🎯 Mission Complete.\n"
-                                f"💰 ငွေထုတ်ပိုက်မယ်။\n"
-                            )
+                # ၁။ ရလဒ်စာတို ပို့ဆောင်ခြင်း
+                if active_target_period == current_period:
+                    if side_val == target_bet_side:
+                        win_count += 1
+                        if current_streak_type == "W":
+                            current_streak_count += 1
                         else:
-                            loss_count += 1
-                            if current_streak_type == "L":
-                                current_streak_count += 1
-                            else:
-                                current_streak_type = "L"
-                                current_streak_count = 1
-                            if current_streak_count > max_loss_streak:
-                                max_loss_streak = current_streak_count
+                            current_streak_type = "W"
+                            current_streak_count = 1
+                        if current_streak_count > max_win_streak:
+                            max_win_streak = current_streak_count
 
-                            streak_text = f"⚠️ {current_streak_count} ပွဲဆက်လွဲ"
-                            result_msg = (
-                                f"🎯 SNIPER SHOT SIGNAL 🎯\n"
-                                f"❌ LOSS #{current_period:04d}: {num_val} [{side_val}] ❌ (Hash: {short_hash})\n"
-                                f"🥺 Target Miss (W:{win_count} | L:{loss_count} | Total:{total_signals})\n"
-                                f"⚡️ အရှုံးဆက်: {streak_text} (Max: {max_loss_streak})\n"
-                                f"🤧 ကံမကောင်းပါ။\n"
-                            )
-                        active_target_period = None
-                        target_bet_side = None
-                    else:
+                        streak_text = f"🔥 {current_streak_count} ပွဲဆက်နိုင်"
                         result_msg = (
                             f"🎯 SNIPER SHOT SIGNAL 🎯\n"
-                            f"⌛️ #{current_period:04d}: {num_val} {side_val} (Hash: {short_hash})\n"
+                            f"🏆 WIN #{current_period:04d}: {num_val} [{side_val}] ✅ (Hash: {short_hash})\n"
+                            f"🎉 Boom 🔥 (W:{win_count} | L:{loss_count} | Total:{total_signals})\n"
+                            f"⚡️ အနိုင်ဆက်: {streak_text} (Max: {max_win_streak})\n"
+                            f"🎯 Mission Complete.\n"
+                            f"💰 ငွေထုတ်ပိုက်မယ်။\n"
                         )
-
-                    # History မှတ်တမ်းသွင်းခြင်း
-                    short_bs = "B" if side_val == "BIG" else "S"
-                    history_50_rounds.append(short_bs)
-                    if len(history_50_rounds) > 50:
-                        history_50_rounds.pop(0)
-
-                    # ၂။ Strategy စစ်ဆေးပြီး အချိန်မီ ပို့ဆောင်ခြင်း
-                    next_period = (current_period + 1) % 1440
-                    sniper_signal, setup_name = check_sniper_strategy(history_50_rounds)
-
-                    if sniper_signal:
-                        total_signals += 1
-                        active_target_period = next_period
-                        target_bet_side = sniper_signal
-
-                        await bot.send_message(chat_id=CHANNEL_ID, text=result_msg)
-
-                        alert_msg = (
-                            f"🎯 SNIPER SHOT ALERT 🎯\n"
-                            f"━━━━━━━━━━━━━━━━━━━━\n"
-                            f"🗯 ပစ်မှတ်တွေ့ပီ\n"
-                            f"🎯 Target Lock - #{next_period:04d}\n"
-                            f"💣 {sniper_signal} ထိုးရန် ❗\n"
-                            f"📊 Setup:\n{setup_name}\n"
-                            f"📈 ယနေ့ Signal ပွဲစဉ်: #{total_signals} ကြိမ်မြောက်\n"
-                            f"Signal Power - Head Shot\n"
-                            f"━━━━━━━━━━━━━━━━━━━━"
-                        )
-                        await bot.send_message(chat_id=CHANNEL_ID, text=alert_msg)
                     else:
-                        streak_status = f"{current_streak_count}W" if current_streak_type == "W" else f"{current_streak_count}L"
-                        result_msg += (
-                            f"🎯 #{next_period:04d}: 👁️ စောင့်ကြည့်ဆဲ (W:{win_count} | L:{loss_count} | Total:{total_signals} | Streak:{streak_status})\n"
-                            f"🔎 ပစ်မှတ်ကို ရှာဖွေနေသည်။"
-                        )
-                        await bot.send_message(chat_id=CHANNEL_ID, text=result_msg)
+                        loss_count += 1
+                        if current_streak_type == "L":
+                            current_streak_count += 1
+                        else:
+                            current_streak_type = "L"
+                            current_streak_count = 1
+                        if current_streak_count > max_loss_streak:
+                            max_loss_streak = current_streak_count
 
-            await asyncio.sleep(2)
+                        streak_text = f"⚠️ {current_streak_count} ပွဲဆက်လွဲ"
+                        result_msg = (
+                            f"🎯 SNIPER SHOT SIGNAL 🎯\n"
+                            f"❌ LOSS #{current_period:04d}: {num_val} [{side_val}] ❌ (Hash: {short_hash})\n"
+                            f"🥺 Target Miss (W:{win_count} | L:{loss_count} | Total:{total_signals})\n"
+                            f"⚡️ အရှုံးဆက်: {streak_text} (Max: {max_loss_streak})\n"
+                            f"🤧 ကံမကောင်းပါ။\n"
+                        )
+                    active_target_period = None
+                    target_bet_side = None
+                else:
+                    result_msg = (
+                        f"🎯 SNIPER SHOT SIGNAL 🎯\n"
+                        f"⌛️ #{current_period:04d}: {num_val} {side_val} (Hash: {short_hash})\n"
+                    )
+
+                # History မှတ်တမ်းသွင်းခြင်း
+                short_bs = "B" if side_val == "BIG" else "S"
+                history_50_rounds.append(short_bs)
+                if len(history_50_rounds) > 50:
+                    history_50_rounds.pop(0)
+
+                # ၂။ Strategy စစ်ဆေးပြီး အချိန်မီ ပို့ဆောင်ခြင်း
+                next_period = (current_period + 1) % 1440
+                sniper_signal, setup_name = check_sniper_strategy(history_50_rounds)
+
+                if sniper_signal:
+                    total_signals += 1
+                    active_target_period = next_period
+                    target_bet_side = sniper_signal
+
+                    await bot.send_message(chat_id=CHANNEL_ID, text=result_msg)
+
+                    alert_msg = (
+                        f"🎯 SNIPER SHOT ALERT 🎯\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"🗯 ပစ်မှတ်တွေ့ပီ\n"
+                        f"🎯 Target Lock - #{next_period:04d}\n"
+                        f"💣 {sniper_signal} ထိုးရန် ❗\n"
+                        f"📊 Setup:\n{setup_name}\n"
+                        f"📈 ယနေ့ Signal ပွဲစဉ်: #{total_signals} ကြိမ်မြောက်\n"
+                        f"Signal Power - Head Shot\n"
+                        f"━━━━━━━━━━━━━━━━━━━━"
+                    )
+                    await bot.send_message(chat_id=CHANNEL_ID, text=alert_msg)
+                else:
+                    streak_status = f"{current_streak_count}W" if current_streak_type == "W" else f"{current_streak_count}L"
+                    result_msg += (
+                        f"🎯 #{next_period:04d}: 👁️ စောင့်ကြည့်ဆဲ (W:{win_count} | L:{loss_count} | Total:{total_signals} | Streak:{streak_status})\n"
+                        f"🔎 ပစ်မှတ်ကို ရှာဖွေနေသည်။"
+                    )
+                    await bot.send_message(chat_id=CHANNEL_ID, text=result_msg)
+
+            await asyncio.sleep(1)
 
         except Exception as e:
             print(f"Loop Error: {e}", flush=True)
