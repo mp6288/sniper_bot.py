@@ -70,7 +70,7 @@ max_loss_streak = 0
 history_50_rounds = []
 
 # ========================================================
-# ၅။ ၆ထီ တိကျသော BLOCK & HASH ရယူခြင်း (Sentinel 24 ကဲ့သို့ စက္ကန့် ၅၄ စနစ်)
+# ၅။ ၆ထီ တိကျသော BLOCK & HASH ရယူခြင်း (:54 စက္ကန့် စနစ်)
 # ========================================================
 def fetch_exact_6lottery_block():
     """၆ထီ၏ Block time (:54 စက္ကန့်) တွင် ထွက်ပေါ်သော Block အစစ်အမှန်ကိုသာ ရယူခြင်း"""
@@ -164,20 +164,22 @@ async def main_worker_loop():
     global total_signals, win_count, loss_count
     global current_streak_type, current_streak_count, max_win_streak, max_loss_streak
 
-    print("🎯 Sniper Bot Exact-Sync Engine Online...", flush=True)
+    print("🎯 Sniper Bot Exact Period & Hash Sync Online...", flush=True)
 
     while True:
         try:
-            # မြန်မာစံတော်ချိန် ဖြင့် လက်ရှိ အလှည့်နံပါတ် တွက်ချက်ခြင်း (၆ထီ တရားဝင် Period)
+            # မြန်မာစံတော်ချိန် ဖြင့် လက်ရှိ အလှည့်နံပါတ် တွက်ချက်ခြင်း
             t = time.gmtime(time.time() + 6.5 * 3600)
             total_minutes = t.tm_hour * 60 + t.tm_min
-            # ၆ထီ ပြီးဆုံးသွားသော အလှည့်နံပါတ် (389 ဖြင့် ကွက်တိကျသည်)
-            expected_period = (total_minutes - 389) % 1440
+            
+            # ၆ထီ ပြီးဆုံးသွားသော အလှည့်နံပါတ် (390 ဖြင့် ကွက်တိကျစေပြီး 0 ဖြစ်ပါက 1440 အဖြစ် သတ်မှတ်သည်)
+            calc_p = (total_minutes - 390) % 1440
+            expected_period = 1440 if calc_p == 0 else calc_p
 
             # ၆ထီ အလှည့်ပြီးဆုံးသည့် :54 စက္ကန့် Block ကို တိကျစွာ ရှာဖွေခြင်း
             block_num, block_hash, num_val, side_val = fetch_exact_6lottery_block()
 
-            # အလှည့်အသစ် ဖြစ်ပြီး Block အသစ် အမှန်တကယ် ထွက်လာမှသာ တစ်ကြိမ်တည်း စာပို့မည်
+            # အလှည့်သစ် Block ထွက်လာမှသာ ၁ မိနစ် ၁ ပွဲနှုန်းဖြင့် တိကျစွာ စာပို့မည်
             if block_num and block_num != last_reported_block and expected_period != last_reported_period:
                 last_reported_block = block_num
                 last_reported_period = expected_period
@@ -238,7 +240,8 @@ async def main_worker_loop():
                     history_50_rounds.pop(0)
 
                 # ၂။ Strategy စစ်ဆေးပြီး အချိန်မီ ပို့ဆောင်ခြင်း
-                next_period = (current_period + 1) % 1440
+                next_p_calc = (current_period + 1) % 1440
+                next_period = 1440 if next_p_calc == 0 else next_p_calc
                 sniper_signal, setup_name = check_sniper_strategy(history_50_rounds)
 
                 if sniper_signal:
