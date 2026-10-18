@@ -67,6 +67,7 @@ current_streak_count = 0
 max_win_streak = 0
 max_loss_streak = 0
 
+last_reset_date = ""  # နေ့စဉ် မနက် ၆:၀၀ တွင် Reset လုပ်ရန် ခြေရာခံခြင်း
 history_50_rounds = []
 
 # ========================================================
@@ -82,7 +83,6 @@ def fetch_exact_6lottery_block():
         if not blocks:
             return None, None, None, None
 
-        # ၆ထီသည် အမြဲတမ်း :54 စက္ကန့် (သို့မဟုတ် :53-:55 စက္ကန့်) Block ကို အသုံးပြုသည်
         target_b = None
         for b in blocks:
             b_ts = b['timestamp'] / 1000.0
@@ -163,16 +163,52 @@ async def main_worker_loop():
     global last_reported_block, last_reported_period, active_target_period, target_bet_side
     global total_signals, win_count, loss_count
     global current_streak_type, current_streak_count, max_win_streak, max_loss_streak
+    global last_reset_date
 
-    print("🎯 Sniper Bot Exact Period & Hash Sync Online...", flush=True)
+    print("🎯 Sniper Bot Exact Period, Hash & Daily Reset Engine Online...", flush=True)
 
     while True:
         try:
-            # မြန်မာစံတော်ချိန် ဖြင့် လက်ရှိ အလှည့်နံပါတ် တွက်ချက်ခြင်း
-            t = time.gmtime(time.time() + 6.5 * 3600)
-            total_minutes = t.tm_hour * 60 + t.tm_min
-            
-            # ၆ထီ ပြီးဆုံးသွားသော အလှည့်နံပါတ် (390 ဖြင့် ကွက်တိကျစေပြီး 0 ဖြစ်ပါက 1440 အဖြစ် သတ်မှတ်သည်)
+            # မြန်မာစံတော်ချိန် (UTC+6:30)
+            now_dt = datetime.fromtimestamp(time.time() + 6.5 * 3600, tz=timezone.utc)
+            today_str = now_dt.strftime("%Y-%m-%d")
+
+            # ========================================================
+            # နေ့စဉ် မနက် ၆:၀၀ တိတိတွင် Daily Report ပို့ပြီး စာရင်းပြန်စခြင်း (Reset)
+            # ========================================================
+            if now_dt.hour == 6 and now_dt.minute == 0 and last_reset_date != today_str:
+                last_reset_date = today_str
+                total_played = win_count + loss_count
+                win_rate = (win_count / total_played * 100) if total_played > 0 else 0.0
+
+                report_msg = (
+                    f"📊 <b>SNIPER SHOT DAILY REPORT</b> 📊\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📅 ရက်စွဲ: <b>{today_str}</b>\n"
+                    f"🎰 ၆ထီ တစ်နေ့တာ Round ပေါင်း: <b>1,440 ပွဲ</b>\n"
+                    f"🎯 Sniper Signal ပေးခဲ့သောပွဲရေ: <b>{total_signals} ပွဲ</b>\n"
+                    f"🏆 အနိုင်ပွဲ: <b>{win_count}</b> | ❌ အရှုံးပွဲ: <b>{loss_count}</b>\n"
+                    f"📈 Win Rate: <b>{win_rate:.2f}%</b>\n"
+                    f"🔥 Max Win Streak: <b>{max_win_streak} ပွဲဆက်</b>\n"
+                    f"⚠️ Max Loss Streak: <b>{max_loss_streak} ပွဲဆက်</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"🔄 ယနေ့အတွက် စာရင်းအင်းများ (W:0 | L:0) ပြန်လည်စတင်ပါပြီ။"
+                )
+                try:
+                    await bot.send_message(chat_id=CHANNEL_ID, text=report_msg, parse_mode="HTML")
+                except Exception as e:
+                    print(f"Report Send Error: {e}", flush=True)
+
+                # တစ်နေ့တာ စာရင်းများအားလုံး သုညမှ ပြန်စခြင်း
+                total_signals = 0
+                win_count = 0
+                loss_count = 0
+                current_streak_count = 0
+                max_win_streak = 0
+                max_loss_streak = 0
+
+            # ၆ထီ အလှည့်နံပါတ် တွက်ချက်ခြင်း
+            total_minutes = now_dt.hour * 60 + now_dt.minute
             calc_p = (total_minutes - 390) % 1440
             expected_period = 1440 if calc_p == 0 else calc_p
 
