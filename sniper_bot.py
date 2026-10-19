@@ -52,7 +52,7 @@ def self_ping_worker():
 threading.Thread(target=self_ping_worker, daemon=True).start()
 
 # ========================================================
-# ၄။ STATE VARIABLES & PATTERN TRACKERS
+# ၄။ STATE VARIABLES & COUNTERS (V4.0 Ultra-Sniper)
 # ========================================================
 last_reported_block = None
 last_reported_period = None
@@ -71,12 +71,9 @@ max_loss_streak = 0
 last_reset_date = ""  # နေ့စဉ် မနက် ၆:၀၀ တွင် Reset လုပ်ရန်
 history_50_rounds = []
 
-# Pattern တစ်ခုချင်းစီ၏ ပွဲရေနှင့် Win/Loss စာရင်း
 pattern_stats = {
-    "B_Pullback": {"name": "B-Trend Pullback", "total": 0, "win": 0, "loss": 0},
-    "B_Exhaustion": {"name": "B-Trend Exhaustion", "total": 0, "win": 0, "loss": 0},
-    "S_Pullback": {"name": "S-Trend Pullback", "total": 0, "win": 0, "loss": 0},
-    "S_Exhaustion": {"name": "S-Trend Exhaustion", "total": 0, "win": 0, "loss": 0}
+    "B_Super_Pullback": {"name": "B-SuperTrend Pullback (2-Step)", "total": 0, "win": 0, "loss": 0},
+    "S_Super_Pullback": {"name": "S-SuperTrend Pullback (2-Step)", "total": 0, "win": 0, "loss": 0}
 }
 
 # ========================================================
@@ -144,27 +141,29 @@ def prefill_history():
 
 prefill_history()
 
+# ========================================================
+# ၆။ V4.0 ULTRA-SNIPER STRATEGY (SuperTrend 60%+ & 2-Step Pullback Only)
+# ========================================================
 def check_sniper_strategy(history):
-    if len(history) < 15:
+    """Super Trend (>= 60%) တွင် ၂ လုံး အနားယူကျဆင်းချိန်ကိုသာ သီးသန့် ပစ်ခတ်ခြင်း"""
+    if len(history) < 20:
         return None, None, None
     
     recent_50 = history[-50:]
     b_count = recent_50.count("B")
     s_count = recent_50.count("S")
     
-    # Uptrend Setup (B >= 28)
-    if b_count >= 28:
+    # Super Uptrend Setup (B >= 30 ကြိမ် / ၆၀% အထက်)
+    # အကြီးရေစီး အလွန်အားကောင်းနေချိန်တွင် အသေး (၂) လုံးတည်း အနားယူကျဆင်းလာမှသာ BIG ထိုးမည်
+    if b_count >= 30:
         if len(history) >= 3 and history[-2:] == ["S", "S"]:
-            return "BIG", "B-Trend Pullback Resumption 53.3%", "B_Pullback"
-        if len(history) >= 4 and history[-4:] == ["B", "B", "B", "B"]:
-            return "SMALL", "B-Trend Exhaustion Fade 50.6%", "B_Exhaustion"
+            return "BIG", "B-SuperTrend Pullback 53.8%", "B_Super_Pullback"
             
-    # Downtrend Setup (S >= 28)
-    elif s_count >= 28:
+    # Super Downtrend Setup (S >= 30 ကြိမ် / ၆၀% အထက်)
+    # အသေးရေစီး အလွန်အားကောင်းနေချိန်တွင် အကြီး (၂) လုံးတည်း အနားယူတက်လာမှသာ SMALL ထိုးမည်
+    elif s_count >= 30:
         if len(history) >= 3 and history[-2:] == ["B", "B"]:
-            return "SMALL", "S-Trend Pullback Resumption 52.0%", "S_Pullback"
-        if len(history) >= 4 and history[-4:] == ["S", "S", "S", "S"]:
-            return "BIG", "S-Trend Exhaustion Fade 50.6%", "S_Exhaustion"
+            return "SMALL", "S-SuperTrend Pullback 53.8%", "S_Super_Pullback"
             
     return None, None, None
 
@@ -174,7 +173,7 @@ async def main_worker_loop():
     global current_streak_type, current_streak_count, max_win_streak, max_loss_streak
     global last_reset_date, pattern_stats
 
-    print("🎯 Sniper Bot Pattern Breakdown & Daily Reset Engine Online...", flush=True)
+    print("🎯 Sniper Bot V4.0 Ultra-Sniper Engine Online...", flush=True)
 
     while True:
         try:
@@ -182,7 +181,7 @@ async def main_worker_loop():
             today_str = now_dt.strftime("%Y-%m-%d")
 
             # ========================================================
-            # နေ့စဉ် မနက် ၆:၀၀ တိတိတွင် Pattern အလိုက် အစီရင်ခံစာ ပို့ပြီး Reset လုပ်ခြင်း
+            # နေ့စဉ် မနက် ၆:၀၀ တိတိတွင် Daily Report ပို့ပြီး စာရင်းပြန်စခြင်း (Reset)
             # ========================================================
             if now_dt.hour == 6 and now_dt.minute == 0 and last_reset_date != today_str:
                 last_reset_date = today_str
@@ -198,17 +197,17 @@ async def main_worker_loop():
                     pattern_text += f"• <b>{v['name']}</b>: {tot} ပွဲ ({w} နိုင် / {l} ရှုံး | WR: {wr:.2f}%)\n"
 
                 report_msg = (
-                    f"📊 <b>SNIPER SHOT DAILY REPORT</b> 📊\n"
+                    f"📊 <b>SNIPER SHOT V4.0 DAILY REPORT</b> 📊\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"📅 ရက်စွဲ: <b>{today_str}</b>\n"
                     f"🎰 ၆ထီ တစ်နေ့တာ Round ပေါင်း: <b>1,440 ပွဲ</b>\n"
-                    f"🎯 Sniper Signal ပေးခဲ့သောပွဲရေ: <b>{total_signals} ပွဲ</b>\n"
+                    f"🎯 Ultra-Sniper Signal ပေးခဲ့သောပွဲရေ: <b>{total_signals} ပွဲ</b>\n"
                     f"🏆 အနိုင်ပွဲ: <b>{win_count}</b> | ❌ အရှုံးပွဲ: <b>{loss_count}</b>\n"
                     f"📈 စုစုပေါင်း Win Rate: <b>{win_rate:.2f}%</b>\n"
                     f"🔥 Max Win Streak: <b>{max_win_streak} ပွဲဆက်</b>\n"
                     f"⚠️ Max Loss Streak: <b>{max_loss_streak} ပွဲဆက်</b>\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"📈 <b>STRATEGY PATTERNS BREAKDOWN:</b>\n"
+                    f"📈 <b>ULTRA-SNIPER SETUPS BREAKDOWN:</b>\n"
                     f"{pattern_text}"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"🔄 ယနေ့အတွက် စာရင်းအင်းများ (W:0 | L:0) ပြန်လည်စတင်ပါပြီ။"
@@ -248,7 +247,6 @@ async def main_worker_loop():
                 if active_target_period == current_period:
                     is_win = (side_val == target_bet_side)
                     
-                    # Pattern အလိုက် စာရင်းသွင်းခြင်း
                     if active_setup_key in pattern_stats:
                         pattern_stats[active_setup_key]["total"] += 1
                         if is_win:
@@ -324,12 +322,12 @@ async def main_worker_loop():
                     alert_msg = (
                         f"🎯 SNIPER SHOT ALERT 🎯\n"
                         f"━━━━━━━━━━━━━━━━━━━━\n"
-                        f"🗯 ပစ်မှတ်တွေ့ပီ\n"
+                        f"🗯 ပစ်မှတ်တွေ့ပီ (Super Trend 60%+)\n"
                         f"🎯 Target Lock - #{next_period:04d}\n"
                         f"💣 {sniper_signal} ထိုးရန် ❗\n"
                         f"📊 Setup:\n{setup_name}\n"
                         f"📈 ယနေ့ Signal ပွဲစဉ်: #{total_signals} ကြိမ်မြောက်\n"
-                        f"Signal Power - Head Shot\n"
+                        f"Signal Power - High Precision Shot\n"
                         f"━━━━━━━━━━━━━━━━━━━━"
                     )
                     await bot.send_message(chat_id=CHANNEL_ID, text=alert_msg)
