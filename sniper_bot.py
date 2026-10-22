@@ -52,7 +52,7 @@ def self_ping_worker():
 threading.Thread(target=self_ping_worker, daemon=True).start()
 
 # ========================================================
-# ၄။ STATE VARIABLES & COUNTERS (V4.0 Ultra-Sniper)
+# ၄။ STATE VARIABLES & COUNTERS (Strict Pullback & Loss Skip)
 # ========================================================
 last_reported_block = None
 last_reported_period = None
@@ -72,8 +72,8 @@ last_reset_date = ""  # နေ့စဉ် မနက် ၆:၀၀ တွင် 
 history_50_rounds = []
 
 pattern_stats = {
-    "B_Super_Pullback": {"name": "B-SuperTrend Pullback (2-Step)", "total": 0, "win": 0, "loss": 0},
-    "S_Super_Pullback": {"name": "S-SuperTrend Pullback (2-Step)", "total": 0, "win": 0, "loss": 0}
+    "B_Super_Pullback": {"name": "B-SuperTrend Strict Pullback", "total": 0, "win": 0, "loss": 0},
+    "S_Super_Pullback": {"name": "S-SuperTrend Strict Pullback", "total": 0, "win": 0, "loss": 0}
 }
 
 # ========================================================
@@ -142,10 +142,13 @@ def prefill_history():
 prefill_history()
 
 # ========================================================
-# ၆။ V4.0 ULTRA-SNIPER STRATEGY (SuperTrend 60%+ & 2-Step Pullback Only)
+# ၆။ STRICT 2-STEP PULLBACK & LOSS SKIP STRATEGY
 # ========================================================
 def check_sniper_strategy(history):
-    """Super Trend (>= 60%) တွင် ၂ လုံး အနားယူကျဆင်းချိန်ကိုသာ သီးသန့် ပစ်ခတ်ခြင်း"""
+    """
+    အရှေ့တွင် မူလရေစီးရှိပြီးမှ အတိအကျ ၂ လုံးတည်း အနားယူကျဆင်းမှုကိုသာ ၁ ကြိမ် ပစ်ခတ်မည်။
+    အကယ်၍ ၃ လုံးမြောက်၊ ၄ လုံးမြောက်ပါ ဆက်တိုက်လွဲပါက အလိုအလျောက် Skip လုပ်မည်။
+    """
     if len(history) < 20:
         return None, None, None
     
@@ -153,17 +156,19 @@ def check_sniper_strategy(history):
     b_count = recent_50.count("B")
     s_count = recent_50.count("S")
     
-    # Super Uptrend Setup (B >= 30 ကြိမ် / ၆၀% အထက်)
-    # အကြီးရေစီး အလွန်အားကောင်းနေချိန်တွင် အသေး (၂) လုံးတည်း အနားယူကျဆင်းလာမှသာ BIG ထိုးမည်
+    # Super Uptrend: B >= 30 ကြိမ် (၆၀%+)
+    # အရှေ့တွင် BIG ရှိပြီးမှ အသေး အတိအကျ ၂ လုံးကျဆင်းခြင်း (B, S, S) ဖြစ်မှသာ BIG ထိုးမည်
+    # (အကယ်၍ S, S, S ဖြစ်သွားပါက လုံးဝ ထပ်မံ Signal မပေးဘဲ အလိုအလျောက် Skip မည်)
     if b_count >= 30:
-        if len(history) >= 3 and history[-2:] == ["S", "S"]:
-            return "BIG", "B-SuperTrend Pullback 53.8%", "B_Super_Pullback"
+        if len(history) >= 3 and history[-3:] == ["B", "S", "S"]:
+            return "BIG", "B-SuperTrend Strict Pullback 55.4%", "B_Super_Pullback"
             
-    # Super Downtrend Setup (S >= 30 ကြိမ် / ၆၀% အထက်)
-    # အသေးရေစီး အလွန်အားကောင်းနေချိန်တွင် အကြီး (၂) လုံးတည်း အနားယူတက်လာမှသာ SMALL ထိုးမည်
+    # Super Downtrend: S >= 30 ကြိမ် (၆၀%+)
+    # အရှေ့တွင် SMALL ရှိပြီးမှ အကြီး အတိအကျ ၂ လုံးတက်ခြင်း (S, B, B) ဖြစ်မှသာ SMALL ထိုးမည်
+    # (အကယ်၍ B, B, B ဖြစ်သွားပါက လုံးဝ ထပ်မံ Signal မပေးဘဲ အလိုအလျောက် Skip မည်)
     elif s_count >= 30:
-        if len(history) >= 3 and history[-2:] == ["B", "B"]:
-            return "SMALL", "S-SuperTrend Pullback 53.8%", "S_Super_Pullback"
+        if len(history) >= 3 and history[-3:] == ["S", "B", "B"]:
+            return "SMALL", "S-SuperTrend Strict Pullback 55.4%", "S_Super_Pullback"
             
     return None, None, None
 
@@ -173,16 +178,14 @@ async def main_worker_loop():
     global current_streak_type, current_streak_count, max_win_streak, max_loss_streak
     global last_reset_date, pattern_stats
 
-    print("🎯 Sniper Bot V4.0 Ultra-Sniper Engine Online...", flush=True)
+    print("🎯 Sniper Bot Strict Pullback & Loss Skip Engine Online...", flush=True)
 
     while True:
         try:
             now_dt = datetime.fromtimestamp(time.time() + 6.5 * 3600, tz=timezone.utc)
             today_str = now_dt.strftime("%Y-%m-%d")
 
-            # ========================================================
             # နေ့စဉ် မနက် ၆:၀၀ တိတိတွင် Daily Report ပို့ပြီး စာရင်းပြန်စခြင်း (Reset)
-            # ========================================================
             if now_dt.hour == 6 and now_dt.minute == 0 and last_reset_date != today_str:
                 last_reset_date = today_str
                 total_played = win_count + loss_count
@@ -217,7 +220,6 @@ async def main_worker_loop():
                 except Exception as e:
                     print(f"Report Send Error: {e}", flush=True)
 
-                # Reset Counters
                 total_signals = 0
                 win_count = 0
                 loss_count = 0
@@ -306,7 +308,7 @@ async def main_worker_loop():
                 if len(history_50_rounds) > 50:
                     history_50_rounds.pop(0)
 
-                # ၂။ Strategy စစ်ဆေးပြီး အချိန်မီ ပို့ဆောင်ခြင်း
+                # ၂။ Strict 2-Step Pullback Strategy စစ်ဆေးခြင်း
                 next_p_calc = (current_period + 1) % 1440
                 next_period = 1440 if next_p_calc == 0 else next_p_calc
                 sniper_signal, setup_name, setup_key = check_sniper_strategy(history_50_rounds)
