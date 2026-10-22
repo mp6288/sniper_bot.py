@@ -1,4 +1,5 @@
 import os
+import json
 import time
 import asyncio
 import threading
@@ -13,6 +14,7 @@ from telegram import Bot
 # ========================================================
 BOT_TOKEN = "8923086070:AAFhc6g7npe9Cw9p1zKESXVRw8QN24y7CNo"
 CHANNEL_ID = "-1004325746548"
+STATE_FILE = "sniper_state.json"
 bot = Bot(token=BOT_TOKEN)
 
 # ========================================================
@@ -52,29 +54,47 @@ def self_ping_worker():
 threading.Thread(target=self_ping_worker, daemon=True).start()
 
 # ========================================================
-# ၄။ STATE VARIABLES & COUNTERS (Strict Pullback & Loss Skip)
+# ၄။ STATE MANAGEMENT (DATA PERSISTENCE စနစ် - စာရင်းမပျောက်စေရန်)
 # ========================================================
+default_state = {
+    "total_signals": 0,
+    "win_count": 0,
+    "loss_count": 0,
+    "current_streak_type": "W",
+    "current_streak_count": 0,
+    "max_win_streak": 0,
+    "max_loss_streak": 0,
+    "last_reset_date": "",
+    "pattern_stats": {
+        "B_Super_Pullback": {"name": "B-SuperTrend Strict Pullback", "total": 0, "win": 0, "loss": 0},
+        "S_Super_Pullback": {"name": "S-SuperTrend Strict Pullback", "total": 0, "win": 0, "loss": 0}
+    }
+}
+
+def load_state():
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Load state error: {e}", flush=True)
+    return default_state.copy()
+
+def save_state(s):
+    try:
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(s, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Save state error: {e}", flush=True)
+
+state = load_state()
+
 last_reported_block = None
 last_reported_period = None
 active_target_period = None
 target_bet_side = None
 active_setup_key = None
-
-total_signals = 0
-win_count = 0
-loss_count = 0
-current_streak_type = "W"
-current_streak_count = 0
-max_win_streak = 0
-max_loss_streak = 0
-
-last_reset_date = ""  # နေ့စဉ် မနက် ၆:၀၀ တွင် Reset လုပ်ရန်
 history_50_rounds = []
-
-pattern_stats = {
-    "B_Super_Pullback": {"name": "B-SuperTrend Strict Pullback", "total": 0, "win": 0, "loss": 0},
-    "S_Super_Pullback": {"name": "S-SuperTrend Strict Pullback", "total": 0, "win": 0, "loss": 0}
-}
 
 # ========================================================
 # ၅။ ၆ထီ တိကျသော BLOCK & HASH ရယူခြင်း (:54 စက္ကန့် စနစ်)
@@ -158,14 +178,12 @@ def check_sniper_strategy(history):
     
     # Super Uptrend: B >= 30 ကြိမ် (၆၀%+)
     # အရှေ့တွင် BIG ရှိပြီးမှ အသေး အတိအကျ ၂ လုံးကျဆင်းခြင်း (B, S, S) ဖြစ်မှသာ BIG ထိုးမည်
-    # (အကယ်၍ S, S, S ဖြစ်သွားပါက လုံးဝ ထပ်မံ Signal မပေးဘဲ အလိုအလျောက် Skip မည်)
     if b_count >= 30:
         if len(history) >= 3 and history[-3:] == ["B", "S", "S"]:
             return "BIG", "B-SuperTrend Strict Pullback 55.4%", "B_Super_Pullback"
             
     # Super Downtrend: S >= 30 ကြိမ် (၆၀%+)
     # အရှေ့တွင် SMALL ရှိပြီးမှ အကြီး အတိအကျ ၂ လုံးတက်ခြင်း (S, B, B) ဖြစ်မှသာ SMALL ထိုးမည်
-    # (အကယ်၍ B, B, B ဖြစ်သွားပါက လုံးဝ ထပ်မံ Signal မပေးဘဲ အလိုအလျောက် Skip မည်)
     elif s_count >= 30:
         if len(history) >= 3 and history[-3:] == ["S", "B", "B"]:
             return "SMALL", "S-SuperTrend Strict Pullback 55.4%", "S_Super_Pullback"
@@ -173,12 +191,9 @@ def check_sniper_strategy(history):
     return None, None, None
 
 async def main_worker_loop():
-    global last_reported_block, last_reported_period, active_target_period, target_bet_side, active_setup_key
-    global total_signals, win_count, loss_count
-    global current_streak_type, current_streak_count, max_win_streak, max_loss_streak
-    global last_reset_date, pattern_stats
+    global last_reported_block, last_reported_period, active_target_period, target_bet_side, active_setup_key, state
 
-    print("🎯 Sniper Bot Strict Pullback & Loss Skip Engine Online...", flush=True)
+    print("🎯 Sniper Bot Strict Pullback with Persistent Daily Report Engine Online...", flush=True)
 
     while True:
         try:
@@ -186,13 +201,16 @@ async def main_worker_loop():
             today_str = now_dt.strftime("%Y-%m-%d")
 
             # နေ့စဉ် မနက် ၆:၀၀ တိတိတွင် Daily Report ပို့ပြီး စာရင်းပြန်စခြင်း (Reset)
-            if now_dt.hour == 6 and now_dt.minute == 0 and last_reset_date != today_str:
-                last_reset_date = today_str
-                total_played = win_count + loss_count
-                win_rate = (win_count / total_played * 100) if total_played > 0 else 0.0
+            if now_dt.hour == 6 and now_dt.minute == 0 and state.get("last_reset_date") != today_str:
+                state["last_reset_date"] = today_str
+                w_cnt = state.get("win_count", 0)
+                l_cnt = state.get("loss_count", 0)
+                tot_sig = state.get("total_signals", 0)
+                total_played = w_cnt + l_cnt
+                win_rate = (w_cnt / total_played * 100) if total_played > 0 else 0.0
 
                 pattern_text = ""
-                for k, v in pattern_stats.items():
+                for k, v in state.get("pattern_stats", {}).items():
                     tot = v["total"]
                     w = v["win"]
                     l = v["loss"]
@@ -204,11 +222,11 @@ async def main_worker_loop():
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"📅 ရက်စွဲ: <b>{today_str}</b>\n"
                     f"🎰 ၆ထီ တစ်နေ့တာ Round ပေါင်း: <b>1,440 ပွဲ</b>\n"
-                    f"🎯 Ultra-Sniper Signal ပေးခဲ့သောပွဲရေ: <b>{total_signals} ပွဲ</b>\n"
-                    f"🏆 အနိုင်ပွဲ: <b>{win_count}</b> | ❌ အရှုံးပွဲ: <b>{loss_count}</b>\n"
+                    f"🎯 Ultra-Sniper Signal ပေးခဲ့သောပွဲရေ: <b>{tot_sig} ပွဲ</b>\n"
+                    f"🏆 အနိုင်ပွဲ: <b>{w_cnt}</b> | ❌ အရှုံးပွဲ: <b>{l_cnt}</b>\n"
                     f"📈 စုစုပေါင်း Win Rate: <b>{win_rate:.2f}%</b>\n"
-                    f"🔥 Max Win Streak: <b>{max_win_streak} ပွဲဆက်</b>\n"
-                    f"⚠️ Max Loss Streak: <b>{max_loss_streak} ပွဲဆက်</b>\n"
+                    f"🔥 Max Win Streak: <b>{state.get('max_win_streak', 0)} ပွဲဆက်</b>\n"
+                    f"⚠️ Max Loss Streak: <b>{state.get('max_loss_streak', 0)} ပွဲဆက်</b>\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"📈 <b>ULTRA-SNIPER SETUPS BREAKDOWN:</b>\n"
                     f"{pattern_text}"
@@ -220,16 +238,18 @@ async def main_worker_loop():
                 except Exception as e:
                     print(f"Report Send Error: {e}", flush=True)
 
-                total_signals = 0
-                win_count = 0
-                loss_count = 0
-                current_streak_count = 0
-                max_win_streak = 0
-                max_loss_streak = 0
-                for k in pattern_stats:
-                    pattern_stats[k]["total"] = 0
-                    pattern_stats[k]["win"] = 0
-                    pattern_stats[k]["loss"] = 0
+                # Reset daily counters
+                state["total_signals"] = 0
+                state["win_count"] = 0
+                state["loss_count"] = 0
+                state["current_streak_count"] = 0
+                state["max_win_streak"] = 0
+                state["max_loss_streak"] = 0
+                for k in state.get("pattern_stats", {}):
+                    state["pattern_stats"][k]["total"] = 0
+                    state["pattern_stats"][k]["win"] = 0
+                    state["pattern_stats"][k]["loss"] = 0
+                save_state(state)
 
             # ၆ထီ အလှည့်နံပါတ် တွက်ချက်ခြင်း
             total_minutes = now_dt.hour * 60 + now_dt.minute
@@ -249,50 +269,52 @@ async def main_worker_loop():
                 if active_target_period == current_period:
                     is_win = (side_val == target_bet_side)
                     
-                    if active_setup_key in pattern_stats:
-                        pattern_stats[active_setup_key]["total"] += 1
+                    pstats = state.get("pattern_stats", {})
+                    if active_setup_key in pstats:
+                        pstats[active_setup_key]["total"] += 1
                         if is_win:
-                            pattern_stats[active_setup_key]["win"] += 1
+                            pstats[active_setup_key]["win"] += 1
                         else:
-                            pattern_stats[active_setup_key]["loss"] += 1
+                            pstats[active_setup_key]["loss"] += 1
 
                     if is_win:
-                        win_count += 1
-                        if current_streak_type == "W":
-                            current_streak_count += 1
+                        state["win_count"] = state.get("win_count", 0) + 1
+                        if state.get("current_streak_type") == "W":
+                            state["current_streak_count"] = state.get("current_streak_count", 0) + 1
                         else:
-                            current_streak_type = "W"
-                            current_streak_count = 1
-                        if current_streak_count > max_win_streak:
-                            max_win_streak = current_streak_count
+                            state["current_streak_type"] = "W"
+                            state["current_streak_count"] = 1
+                        if state["current_streak_count"] > state.get("max_win_streak", 0):
+                            state["max_win_streak"] = state["current_streak_count"]
 
-                        streak_text = f"🔥 {current_streak_count} ပွဲဆက်နိုင်"
+                        streak_text = f"🔥 {state['current_streak_count']} ပွဲဆက်နိုင်"
                         result_msg = (
                             f"🎯 SNIPER SHOT SIGNAL 🎯\n"
                             f"🏆 WIN #{current_period:04d}: {num_val} [{side_val}] ✅ (Hash: {short_hash})\n"
-                            f"🎉 Boom 🔥 (W:{win_count} | L:{loss_count} | Total:{total_signals})\n"
-                            f"⚡️ အနိုင်ဆက်: {streak_text} (Max: {max_win_streak})\n"
+                            f"🎉 Boom 🔥 (W:{state['win_count']} | L:{state['loss_count']} | Total:{state['total_signals']})\n"
+                            f"⚡️ အနိုင်ဆက်: {streak_text} (Max: {state['max_win_streak']})\n"
                             f"🎯 Mission Complete.\n"
                             f"💰 ငွေထုတ်ပိုက်မယ်။\n"
                         )
                     else:
-                        loss_count += 1
-                        if current_streak_type == "L":
-                            current_streak_count += 1
+                        state["loss_count"] = state.get("loss_count", 0) + 1
+                        if state.get("current_streak_type") == "L":
+                            state["current_streak_count"] = state.get("current_streak_count", 0) + 1
                         else:
-                            current_streak_type = "L"
-                            current_streak_count = 1
-                        if current_streak_count > max_loss_streak:
-                            max_loss_streak = current_streak_count
+                            state["current_streak_type"] = "L"
+                            state["current_streak_count"] = 1
+                        if state["current_streak_count"] > state.get("max_loss_streak", 0):
+                            state["max_loss_streak"] = state["current_streak_count"]
 
-                        streak_text = f"⚠️ {current_streak_count} ပွဲဆက်လွဲ"
+                        streak_text = f"⚠️ {state['current_streak_count']} ပွဲဆက်လွဲ"
                         result_msg = (
                             f"🎯 SNIPER SHOT SIGNAL 🎯\n"
                             f"❌ LOSS #{current_period:04d}: {num_val} [{side_val}] ❌ (Hash: {short_hash})\n"
-                            f"🥺 Target Miss (W:{win_count} | L:{loss_count} | Total:{total_signals})\n"
-                            f"⚡️ အရှုံးဆက်: {streak_text} (Max: {max_loss_streak})\n"
+                            f"🥺 Target Miss (W:{state['win_count']} | L:{state['loss_count']} | Total:{state['total_signals']})\n"
+                            f"⚡️ အရှုံးဆက်: {streak_text} (Max: {state['max_loss_streak']})\n"
                             f"🤧 ကံမကောင်းပါ။\n"
                         )
+                    save_state(state)
                     active_target_period = None
                     target_bet_side = None
                     active_setup_key = None
@@ -314,7 +336,8 @@ async def main_worker_loop():
                 sniper_signal, setup_name, setup_key = check_sniper_strategy(history_50_rounds)
 
                 if sniper_signal:
-                    total_signals += 1
+                    state["total_signals"] = state.get("total_signals", 0) + 1
+                    save_state(state)
                     active_target_period = next_period
                     target_bet_side = sniper_signal
                     active_setup_key = setup_key
@@ -322,21 +345,26 @@ async def main_worker_loop():
                     await bot.send_message(chat_id=CHANNEL_ID, text=result_msg)
 
                     alert_msg = (
-                        f"🚨 SNIPER SHOT ALERT 🚨\n"
+                        f"🎯 SNIPER SHOT ALERT 🎯\n"
                         f"━━━━━━━━━━━━━━━━━━━━\n"
                         f"🗯 ပစ်မှတ်တွေ့ပီ (Super Trend 60%+)\n"
                         f"🎯 Target Lock - #{next_period:04d}\n"
                         f"💣 {sniper_signal} ထိုးရန် ❗\n"
                         f"📊 Setup:\n{setup_name}\n"
-                        f"📈 ယနေ့ Signal ပွဲစဉ်: #{total_signals} ကြိမ်မြောက်\n"
+                        f"📈 ယနေ့ Signal ပွဲစဉ်: #{state['total_signals']} ကြိမ်မြောက်\n"
                         f"Signal Power - High Precision Shot\n"
                         f"━━━━━━━━━━━━━━━━━━━━"
                     )
                     await bot.send_message(chat_id=CHANNEL_ID, text=alert_msg)
                 else:
-                    streak_status = f"{current_streak_count}W" if current_streak_type == "W" else f"{current_streak_count}L"
+                    w_cnt = state.get("win_count", 0)
+                    l_cnt = state.get("loss_count", 0)
+                    tot_sig = state.get("total_signals", 0)
+                    s_type = state.get("current_streak_type", "W")
+                    s_cnt = state.get("current_streak_count", 0)
+                    streak_status = f"{s_cnt}W" if s_type == "W" else f"{s_cnt}L"
                     result_msg += (
-                        f"🎯 #{next_period:04d}: 👁️ စောင့်ကြည့်ဆဲ (W:{win_count} | L:{loss_count} | Total:{total_signals} | Streak:{streak_status})\n"
+                        f"🎯 #{next_period:04d}: 👁️ စောင့်ကြည့်ဆဲ (W:{w_cnt} | L:{l_cnt} | Total:{tot_sig} | Streak:{streak_status})\n"
                         f"🔎 ပစ်မှတ်ကို ရှာဖွေနေသည်။"
                     )
                     await bot.send_message(chat_id=CHANNEL_ID, text=result_msg)
