@@ -322,7 +322,7 @@ async def main_worker_loop():
                     await bot.send_message(chat_id=CHANNEL_ID, text=result_msg)
 
                     alert_msg = (
-                        f"🎯 SNIPER SHOT ALERT 🎯\n"
+                        f"🚨 SNIPER SHOT ALERT 🚨\n"
                         f"━━━━━━━━━━━━━━━━━━━━\n"
                         f"🗯 ပစ်မှတ်တွေ့ပီ (Super Trend 60%+)\n"
                         f"🎯 Target Lock - #{next_period:04d}\n"
