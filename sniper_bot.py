@@ -54,7 +54,7 @@ def self_ping_worker():
 threading.Thread(target=self_ping_worker, daemon=True).start()
 
 # ========================================================
-# ၄။ STATE MANAGEMENT (DATA PERSISTENCE စနစ် - စာရင်းမပျောက်စေရန်)
+# ၄။ STATE MANAGEMENT (DATA PERSISTENCE စနစ် - မပျောက်စေရန်)
 # ========================================================
 default_state = {
     "total_signals": 0,
@@ -66,8 +66,8 @@ default_state = {
     "max_loss_streak": 0,
     "last_reset_date": "",
     "pattern_stats": {
-        "B_Super_Pullback": {"name": "B-SuperTrend Strict Pullback", "total": 0, "win": 0, "loss": 0},
-        "S_Super_Pullback": {"name": "S-SuperTrend Strict Pullback", "total": 0, "win": 0, "loss": 0}
+        "B_Super_Pullback": {"name": "B-SuperTrend Strict 3-Step Pullback", "total": 0, "win": 0, "loss": 0},
+        "S_Super_Pullback": {"name": "S-SuperTrend Strict 2-Step Pullback", "total": 0, "win": 0, "loss": 0}
     }
 }
 
@@ -75,15 +75,20 @@ def load_state():
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                if "pattern_stats" in data and "B_Super_Pullback" in data["pattern_stats"]:
+                    data["pattern_stats"]["B_Super_Pullback"]["name"] = "B-SuperTrend Strict 3-Step Pullback"
+                if "pattern_stats" in data and "S_Super_Pullback" in data["pattern_stats"]:
+                    data["pattern_stats"]["S_Super_Pullback"]["name"] = "S-SuperTrend Strict 2-Step Pullback"
+                return data
         except Exception as e:
             print(f"Load state error: {e}", flush=True)
     return default_state.copy()
 
-def save_state(s):
+def save_state(state):
     try:
         with open(STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(s, f, ensure_ascii=False, indent=2)
+            json.dump(state, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"Save state error: {e}", flush=True)
 
@@ -162,12 +167,13 @@ def prefill_history():
 prefill_history()
 
 # ========================================================
-# ၆။ STRICT 2-STEP PULLBACK & LOSS SKIP STRATEGY
+# ၆။ V4.1 ASYMMETRIC STRICT PULLBACK STRATEGY (B: 3-Step | S: 2-Step)
 # ========================================================
 def check_sniper_strategy(history):
     """
-    အရှေ့တွင် မူလရေစီးရှိပြီးမှ အတိအကျ ၂ လုံးတည်း အနားယူကျဆင်းမှုကိုသာ ၁ ကြိမ် ပစ်ခတ်မည်။
-    အကယ်၍ ၃ လုံးမြောက်၊ ၄ လုံးမြောက်ပါ ဆက်တိုက်လွဲပါက အလိုအလျောက် Skip လုပ်မည်။
+    V4.1 Asymmetric Pullback Engine:
+    - B-SuperTrend (B >= 30 in 50): Strict 3-Step Pullback [B, S, S, S] -> Bet BIG (Auto-Loss Skip on 4th S)
+    - S-SuperTrend (S >= 30 in 50): Strict 2-Step Pullback [S, B, B] -> Bet SMALL (Auto-Loss Skip on 3rd B)
     """
     if len(history) < 20:
         return None, None, None
@@ -177,23 +183,23 @@ def check_sniper_strategy(history):
     s_count = recent_50.count("S")
     
     # Super Uptrend: B >= 30 ကြိမ် (၆၀%+)
-    # အရှေ့တွင် BIG ရှိပြီးမှ အသေး အတိအကျ ၂ လုံးကျဆင်းခြင်း (B, S, S) ဖြစ်မှသာ BIG ထိုးမည်
+    # အရှေ့တွင် BIG ရှိပြီးမှ အသေး အတိအကျ ၃ လုံးကျဆင်းခြင်း (B, S, S, S) ဖြစ်မှသာ BIG ထိုးမည်
     if b_count >= 30:
-        if len(history) >= 3 and history[-3:] == ["B", "S", "S"]:
-            return "BIG", "B-SuperTrend Strict Pullback 55.4%", "B_Super_Pullback"
+        if len(history) >= 4 and history[-4:] == ["B", "S", "S", "S"]:
+            return "BIG", "B-SuperTrend Strict 3-Step Pullback (BSSS-B)", "B_Super_Pullback"
             
     # Super Downtrend: S >= 30 ကြိမ် (၆၀%+)
     # အရှေ့တွင် SMALL ရှိပြီးမှ အကြီး အတိအကျ ၂ လုံးတက်ခြင်း (S, B, B) ဖြစ်မှသာ SMALL ထိုးမည်
     elif s_count >= 30:
         if len(history) >= 3 and history[-3:] == ["S", "B", "B"]:
-            return "SMALL", "S-SuperTrend Strict Pullback 55.4%", "S_Super_Pullback"
+            return "SMALL", "S-SuperTrend Strict 2-Step Pullback (SBB-S)", "S_Super_Pullback"
             
     return None, None, None
 
 async def main_worker_loop():
     global last_reported_block, last_reported_period, active_target_period, target_bet_side, active_setup_key, state
 
-    print("🎯 Sniper Bot Strict Pullback with Persistent Daily Report Engine Online...", flush=True)
+    print("🎯 Sniper Bot V4.1 (B-3Step / S-2Step) Persistent Engine Online...", flush=True)
 
     while True:
         try:
@@ -218,7 +224,7 @@ async def main_worker_loop():
                     pattern_text += f"• <b>{v['name']}</b>: {tot} ပွဲ ({w} နိုင် / {l} ရှုံး | WR: {wr:.2f}%)\n"
 
                 report_msg = (
-                    f"📊 <b>SNIPER SHOT V4.0 DAILY REPORT</b> 📊\n"
+                    f"📊 <b>SNIPER SHOT V4.1 DAILY REPORT</b> 📊\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"📅 ရက်စွဲ: <b>{today_str}</b>\n"
                     f"🎰 ၆ထီ တစ်နေ့တာ Round ပေါင်း: <b>1,440 ပွဲ</b>\n"
@@ -238,7 +244,6 @@ async def main_worker_loop():
                 except Exception as e:
                     print(f"Report Send Error: {e}", flush=True)
 
-                # Reset daily counters
                 state["total_signals"] = 0
                 state["win_count"] = 0
                 state["loss_count"] = 0
@@ -289,7 +294,7 @@ async def main_worker_loop():
 
                         streak_text = f"🔥 {state['current_streak_count']} ပွဲဆက်နိုင်"
                         result_msg = (
-                            f"🎯 SNIPER SHOT SIGNAL 🎯\n"
+                            f"🎯 SNIPER SHOT V4.1 SIGNAL 🎯\n"
                             f"🏆 WIN #{current_period:04d}: {num_val} [{side_val}] ✅ (Hash: {short_hash})\n"
                             f"🎉 Boom 🔥 (W:{state['win_count']} | L:{state['loss_count']} | Total:{state['total_signals']})\n"
                             f"⚡️ အနိုင်ဆက်: {streak_text} (Max: {state['max_win_streak']})\n"
@@ -308,7 +313,7 @@ async def main_worker_loop():
 
                         streak_text = f"⚠️ {state['current_streak_count']} ပွဲဆက်လွဲ"
                         result_msg = (
-                            f"🎯 SNIPER SHOT SIGNAL 🎯\n"
+                            f"🎯 SNIPER SHOT V4.1 SIGNAL 🎯\n"
                             f"❌ LOSS #{current_period:04d}: {num_val} [{side_val}] ❌ (Hash: {short_hash})\n"
                             f"🥺 Target Miss (W:{state['win_count']} | L:{state['loss_count']} | Total:{state['total_signals']})\n"
                             f"⚡️ အရှုံးဆက်: {streak_text} (Max: {state['max_loss_streak']})\n"
@@ -320,7 +325,7 @@ async def main_worker_loop():
                     active_setup_key = None
                 else:
                     result_msg = (
-                        f"🎯 SNIPER SHOT SIGNAL 🎯\n"
+                        f"🎯 SNIPER SHOT V4.1 SIGNAL 🎯\n"
                         f"⌛️ #{current_period:04d}: {num_val} {side_val} (Hash: {short_hash})\n"
                     )
 
@@ -330,7 +335,7 @@ async def main_worker_loop():
                 if len(history_50_rounds) > 50:
                     history_50_rounds.pop(0)
 
-                # ၂။ Strict 2-Step Pullback Strategy စစ်ဆေးခြင်း
+                # ၂။ V4.1 Asymmetric Strict Pullback Strategy စစ်ဆေးခြင်း
                 next_p_calc = (current_period + 1) % 1440
                 next_period = 1440 if next_p_calc == 0 else next_p_calc
                 sniper_signal, setup_name, setup_key = check_sniper_strategy(history_50_rounds)
@@ -345,7 +350,7 @@ async def main_worker_loop():
                     await bot.send_message(chat_id=CHANNEL_ID, text=result_msg)
 
                     alert_msg = (
-                        f"🎯 SNIPER SHOT ALERT 🎯\n"
+                        f"🎯 SNIPER SHOT V4.1 ALERT 🎯\n"
                         f"━━━━━━━━━━━━━━━━━━━━\n"
                         f"🗯 ပစ်မှတ်တွေ့ပီ (Super Trend 60%+)\n"
                         f"🎯 Target Lock - #{next_period:04d}\n"
